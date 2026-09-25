@@ -1,0 +1,15 @@
+[workspace]
+members = [
+    "crates/spectral-dsp",
+    "crates/spectral-resonator-plugin",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.88"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
