@@ -1,6 +1,6 @@
 [package]
 name = "spectral-resonator-plugin"
-version = "0.3.0"
+version = "0.9.1"
 edition.workspace = true
 rust-version.workspace = true
 
@@ -8,5 +8,13 @@ rust-version.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-nice-plug = { version = "=0.4.2", default-features = false }
+nice-plug = { version = "=0.4.2", default-features = false, features = ["editor"] }
+nice-plug-egui = { version = "=0.5.1", default-features = false, features = ["wgpu"] }
+egui = { version = "=0.36.1", features = ["default_fonts"] }
+crossbeam-queue = "0.3.12"
+rustfft = "=6.4.1"
 spectral-dsp = { path = "../spectral-dsp" }
+
+[dev-dependencies]
+egui-wgpu = { version = "=0.36.2", default-features = false }
+pollster = "1.0.1"
