@@ -2,19 +2,36 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use nice_plug::prelude::*;
-use spectral_dsp::StreamingStft;
+use spectral_dsp::{
+    DecayCurve, DecayPoint, ModulationControls, ResonatorControls,
+    SpectralResonator as ResonatorEngine,
+};
 
+mod analyzer;
+mod editor;
+mod midi;
 mod params;
+mod state;
 
-use params::SpectralResonatorParams;
+#[cfg(test)]
+mod process_tests;
+
+use midi::MidiNotes;
+use params::{DecayMode, OutputMode, PitchSource, SpectralResonatorParams};
 
 const FFT_SIZE: usize = 4096;
 const HOP_SIZE: usize = 512;
 
 struct SpectralResonator {
     params: Arc<SpectralResonatorParams>,
-    stft: Option<StreamingStft>,
+    stft: Option<ResonatorEngine>,
     sample_rate: f32,
+    notes: MidiNotes,
+    pitch_source: PitchSource,
+    panic_held: bool,
+    capture: analyzer::AudioCapture,
+    editor_state: Arc<nice_plug_egui::EguiEditorState>,
+    route: [f32; 2],
 }
 
 impl Default for SpectralResonator {
@@ -23,6 +40,15 @@ impl Default for SpectralResonator {
             params: Arc::new(SpectralResonatorParams::default()),
             stft: None,
             sample_rate: 0.0,
+            notes: MidiNotes::default(),
+            pitch_source: PitchSource::Internal,
+            panic_held: false,
+            capture: analyzer::AudioCapture::new(analyzer::SharedAnalysis::new()),
+            editor_state: nice_plug_egui::EguiEditorState::from_size(
+                nice_plug::editor::dpi::LogicalSize::new(1120.0, 780.0),
+                1.0,
+            ),
+            route: [1.0; 2],
         }
     }
 }
@@ -34,8 +60,14 @@ impl Plugin for SpectralResonator {
     const EMAIL: &'static str = "audio@example.invalid";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-    // Keep mono and stereo layouts explicit so Bitwig can negotiate either.
+    // nice-plug exposes the first layout as CLAP's default. Bitwig should
+    // therefore receive stereo by default while mono remains available.
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
+        AudioIOLayout {
+            main_input_channels: NonZeroU32::new(2),
+            main_output_channels: NonZeroU32::new(2),
+            ..AudioIOLayout::const_default()
+        },
         AudioIOLayout {
             main_input_channels: NonZeroU32::new(1),
             main_output_channels: NonZeroU32::new(1),
@@ -44,20 +76,38 @@ impl Plugin for SpectralResonator {
         AudioIOLayout {
             main_input_channels: NonZeroU32::new(2),
             main_output_channels: NonZeroU32::new(2),
+            aux_output_ports: &[new_nonzero_u32(2)],
+            names: PortNames {
+                layout: Some("Stereo + Wet"),
+                aux_outputs: &["Wet / Post Unison"],
+                ..PortNames::const_default()
+            },
             ..AudioIOLayout::const_default()
         },
     ];
 
-    const MIDI_INPUT: MidiConfig = MidiConfig::None;
+    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
     const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
     type SysExMessage = ();
     type BackgroundTask = ();
-    type Editor = ();
+    type Editor = nice_plug_egui::EguiEditor<editor::ResonatorEditor>;
+
+    fn editor(&mut self, _: AsyncExecutor<Self>) -> Option<Self::Editor> {
+        editor::create(
+            self.params.clone(),
+            self.capture.shared.clone(),
+            self.editor_state.clone(),
+        )
+    }
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
+    }
+
+    fn filter_state(state: &mut PluginState) {
+        state::migrate(state);
     }
 
     fn activate(
@@ -77,7 +127,7 @@ impl Plugin for SpectralResonator {
             return false;
         }
 
-        let Some(stft) = StreamingStft::new_resonator(
+        let Some(stft) = ResonatorEngine::new(
             input_channels.get() as usize,
             FFT_SIZE,
             HOP_SIZE,
@@ -90,10 +140,20 @@ impl Plugin for SpectralResonator {
         context.set_latency_samples(stft.latency_samples());
         self.stft = Some(stft);
         self.sample_rate = buffer_config.sample_rate;
+        self.notes.reset();
+        self.pitch_source = self.params.pitch_source.value();
+        self.panic_held = false;
+        self.capture.reset(self.sample_rate);
+        self.route = route_gains(self.params.output_mode.value());
         true
     }
 
     fn reset(&mut self) {
+        self.notes.reset();
+        self.pitch_source = self.params.pitch_source.value();
+        self.panic_held = false;
+        self.capture.reset(self.sample_rate);
+        self.route = route_gains(self.params.output_mode.value());
         if let Some(stft) = &mut self.stft {
             stft.reset();
         }
@@ -102,8 +162,8 @@ impl Plugin for SpectralResonator {
     fn process(
         &mut self,
         buffer: &mut Buffer,
-        _aux: &mut AuxiliaryBuffers,
-        _context: &mut impl ProcessContext<Self>,
+        aux: &mut AuxiliaryBuffers,
+        context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         let Some(stft) = &mut self.stft else {
             for channel in buffer.as_slice() {
@@ -112,28 +172,201 @@ impl Plugin for SpectralResonator {
             return ProcessStatus::Error("STFT engine is not active");
         };
 
-        for mut frame in buffer.iter_samples() {
-            let note = self.params.root_note.value();
+        // A host can flush notes in a zero-length buffer after changing the
+        // pitch source. Synchronize first so those notes survive the next block.
+        let source = self.params.pitch_source.value();
+        let panic = self.params.panic.value();
+        if source != self.pitch_source || (panic && !self.panic_held) {
+            self.notes.reset();
+            stft.panic();
+            self.pitch_source = source;
+        }
+        self.panic_held = panic;
+        let capture_enabled = self.editor_state.is_open() && self.capture.enabled();
+        let mut next_event = context.next_event();
+        for (sample_index, mut frame) in buffer.iter_samples().enumerate() {
+            let mut input = [0.0; 2];
+            for (i, sample) in frame.iter_mut().enumerate() {
+                input[i] = *sample;
+            }
+            if frame.len() == 1 {
+                input[1] = input[0];
+            }
+            let source = self.params.pitch_source.value();
+            let panic = self.params.panic.value();
+            if source != self.pitch_source || (panic && !self.panic_held) {
+                self.notes.reset();
+                stft.panic();
+                self.pitch_source = source;
+            }
+            self.panic_held = panic;
+            // Consume every event at its input-buffer offset, including several
+            // on the same sample. The spectral engine alone quantizes to hops.
+            while let Some(event) = next_event {
+                if event.timing() > sample_index as u32 {
+                    break;
+                }
+                if source == PitchSource::Midi && !panic {
+                    self.notes.handle(event, |action| action.apply(stft));
+                }
+                next_event = context.next_event();
+            }
+            let note = if panic {
+                None
+            } else if source == PitchSource::Internal {
+                Some(self.params.root_note.value())
+            } else {
+                None
+            };
             let decay = self.params.decay_t60.smoothed.next();
             let wet_level = self.params.m2_wet_level.smoothed.next();
-            // The FFT state is updated at hop boundaries; dry and wet still
-            // leave through the same N-sample schedule on each channel.
-            stft.process_resonator_frame(frame.iter_mut(), note, decay, wet_level);
+            let low_hz = self.params.low_mid_hz.smoothed.next();
+            let high_hz = self.params.mid_high_hz.smoothed.next();
+            // Advance node smoothers even in legacy mode so switching modes
+            // cannot revive stale parameter trajectories.
+            let decay_curve = DecayCurve {
+                points: std::array::from_fn(|i| DecayPoint {
+                    hz: self.params.decay_points[i].hz.smoothed.next(),
+                    seconds: self.params.decay_points[i].seconds.smoothed.next(),
+                }),
+            };
+            let controls = ResonatorControls {
+                note,
+                note_token: 0,
+                velocity: 1.0,
+                harmonics: self.params.harmonics.value() as usize,
+                t60: decay,
+                hf_damp: self.params.hf_damp.smoothed.next(),
+                lf_damp: self.params.lf_damp.smoothed.next(),
+                decay_curve: (self.params.decay_mode.value() == DecayMode::Curve)
+                    .then_some(decay_curve),
+                modulation: ModulationControls {
+                    mode: self.params.mod_mode.value().into(),
+                    rate_hz: self.params.mod_rate_hz.smoothed.next(),
+                    amount: self.params.mod_amount.smoothed.next() * 0.01,
+                    pitch_semitones: self.params.mod_pitch_semitones.smoothed.next(),
+                    grain_ms: self.params.grain_ms.smoothed.next(),
+                    unison_voices: self.params.unison_voices.value() as usize,
+                    unison_detune_cents: self.params.unison_detune_cents.smoothed.next(),
+                },
+                unison_mode: self.params.unison_mode.value().into(),
+                voice_spread: self.params.voice_spread.smoothed.next() * 0.01,
+                input_gain: util::db_to_gain(self.params.input_send_db.smoothed.next()),
+                wet_level,
+                mid_mix: self.params.mid_mix.smoothed.next() * 0.01,
+                low_hz,
+                high_hz,
+            };
+            if source == PitchSource::Midi {
+                stft.process_poly_frame(frame.iter_mut(), controls);
+            } else {
+                stft.process_frame(frame.iter_mut(), controls);
+            }
             // Advance output automation once per sample frame for both channels.
             let gain = self.params.output_gain.smoothed.next();
+            let (dry, wet) = stft.output_parts();
+            let target = route_gains(self.params.output_mode.value());
+            for (value, target) in self.route.iter_mut().zip(target) {
+                *value += (target - *value).clamp(
+                    -1.0 / (self.sample_rate * 0.02),
+                    1.0 / (self.sample_rate * 0.02),
+                );
+            }
+            for (i, sample) in frame.iter_mut().enumerate() {
+                *sample = dry[i] * self.route[0] + wet[i] * self.route[1];
+            }
+            // This output is always wet-only, independent of the main route.
+            if let Some(output) = aux.outputs.first_mut() {
+                for (i, channel) in output.as_slice().iter_mut().enumerate() {
+                    channel[sample_index] = wet[i] * gain;
+                }
+            }
+            let mut display_wet = wet.map(|v| v * gain);
+            if frame.len() == 1 {
+                display_wet[1] = display_wet[0];
+            }
+            self.capture.push(input, display_wet, capture_enabled);
             spectral_dsp::apply_frame_gain(frame, gain);
         }
 
+        // Frameworks may deliver boundary events at buffer.len(), including a
+        // zero-length flush. Preserve them for the next audio sample.
+        while let Some(event) = next_event {
+            if self.params.pitch_source.value() == PitchSource::Midi && !self.params.panic.value() {
+                self.notes.handle(event, |action| action.apply(stft));
+            }
+            next_event = context.next_event();
+        }
+
         // Two T60 periods reach roughly -120 dB before the fixed STFT latency.
-        let tail_samples = (self.params.decay_t60.value() * 2.0 * self.sample_rate).ceil() as u32;
-        ProcessStatus::Tail(tail_samples.saturating_add(FFT_SIZE as u32))
+        // Include curve times even just after a mode change, conservatively
+        // retaining tails while the old/new decay laws crossfade.
+        let longest_decay = self
+            .params
+            .decay_points
+            .iter()
+            .fold(self.params.decay_t60.value(), |seconds, point| {
+                seconds.max(point.seconds.value())
+            });
+        let tail_samples = (longest_decay * 2.0 * self.sample_rate).ceil() as u32;
+        ProcessStatus::Tail(
+            tail_samples
+                .saturating_add(FFT_SIZE as u32)
+                .saturating_add(stft.effect_tail_samples()),
+        )
     }
 }
 
 impl ClapPlugin for SpectralResonator {
+    fn remote_controls(
+        &self,
+        context: &mut impl nice_plug::context::remote_controls::RemoteControlsContext,
+    ) {
+        use nice_plug::context::remote_controls::{RemoteControlsPage, RemoteControlsSection};
+        let p = &self.params;
+        context.add_section("Spectral Resonator", |section| {
+            section.add_page("Perform", |page| {
+                page.add_param(&p.low_mid_hz);
+                page.add_param(&p.mid_high_hz);
+                page.add_param(&p.mid_mix);
+                page.add_param(&p.m2_wet_level);
+                page.add_param(&p.decay_t60);
+                page.add_param(&p.root_note);
+                page.add_param(&p.voice_spread);
+                page.add_param(&p.output_gain);
+            });
+            section.add_page("Motion", |page| {
+                page.add_param(&p.mod_mode);
+                page.add_param(&p.mod_rate_hz);
+                page.add_param(&p.mod_amount);
+                page.add_param(&p.mod_pitch_semitones);
+                page.add_param(&p.grain_ms);
+                page.add_param(&p.unison_mode);
+                page.add_param(&p.unison_voices);
+                page.add_param(&p.unison_detune_cents);
+            });
+            section.add_page("Resonance", |page| {
+                page.add_param(&p.pitch_source);
+                page.add_param(&p.harmonics);
+                page.add_param(&p.decay_mode);
+                page.add_param(&p.lf_damp);
+                page.add_param(&p.hf_damp);
+                page.add_param(&p.input_send_db);
+                page.add_param(&p.output_mode);
+                page.add_param(&p.panic);
+            });
+        });
+    }
+    // This engine deliberately uses identical DSP in realtime and offline mode.
+    // Requesting a restart inside render.set() adds an unnecessary handshake
+    // while Bitwig is already transitioning to Bounce. Keep mode changes local;
+    // sample-rate/layout changes still use the regular activate/reset lifecycle.
+    const CLAP_REACTIVATE_ON_RENDER_MODE_CHANGE: bool = false;
+
     const CLAP_ID: &'static str = "org.spectral-resonator.dev";
-    const CLAP_DESCRIPTION: Option<&'static str> =
-        Some("M2 integer-bin spectral resonator research prototype.");
+    const CLAP_DESCRIPTION: Option<&'static str> = Some(
+        "Polyphonic spectral resonator with chorus, wander, granular, unison and frequency decay curve.",
+    );
     const CLAP_MANUAL_URL: Option<&'static str> =
         Some("https://example.invalid/spectral-resonator/manual");
     const CLAP_SUPPORT_URL: Option<&'static str> =
@@ -143,9 +376,25 @@ impl ClapPlugin for SpectralResonator {
 
 nice_export_clap!(SpectralResonator);
 
+fn route_gains(mode: OutputMode) -> [f32; 2] {
+    match mode {
+        OutputMode::Mixed => [1.0, 1.0],
+        OutputMode::Dry => [1.0, 0.0],
+        OutputMode::Wet => [0.0, 1.0],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use spectral_dsp::StreamingStft;
+
+    #[test]
+    fn stereo_is_the_default_clap_layout() {
+        let default_layout = SpectralResonator::AUDIO_IO_LAYOUTS[0];
+        assert_eq!(default_layout.main_input_channels.unwrap().get(), 2);
+        assert_eq!(default_layout.main_output_channels.unwrap().get(), 2);
+    }
 
     fn render(
         input: &[Vec<f32>],
@@ -294,5 +543,97 @@ mod tests {
             }
         }
         assert!(wet_energy > 1.0, "M2 wet path remained inaudible");
+    }
+
+    #[test]
+    fn crossover_retains_low_and_high_dry_while_replacing_mid() {
+        let sample_rate = 48_000.0_f32;
+        let fft_size = 4096;
+        let input_len = fft_size * 5;
+        let mut measured = [0.0_f64; 3];
+        for (slot, frequency) in measured.iter_mut().zip([100.0_f32, 1_000.0, 10_000.0]) {
+            let mut stft = StreamingStft::new_resonator(1, fft_size, 512, sample_rate).unwrap();
+            let mut output_energy = 0.0_f64;
+            let mut input_energy = 0.0_f64;
+            for index in 0..input_len + fft_size {
+                let original = if index < input_len {
+                    (std::f32::consts::TAU * frequency * index as f32 / sample_rate).sin() * 0.4
+                } else {
+                    0.0
+                };
+                let mut sample = original;
+                stft.process_crossover_frame([&mut sample], 57, 2.0, 0.0, 250.0, 4_000.0);
+                if (fft_size * 2..input_len).contains(&index) {
+                    output_energy += f64::from(sample * sample);
+                    input_energy += f64::from(original * original);
+                }
+            }
+            *slot = (output_energy / input_energy).sqrt();
+        }
+        assert!(measured[0] > 0.9, "low dry gain={}", measured[0]);
+        assert!(measured[1] < 0.1, "mid dry leaked={}", measured[1]);
+        assert!(measured[2] > 0.9, "high dry gain={}", measured[2]);
+    }
+
+    #[test]
+    fn crossover_left_output_does_not_depend_on_right_input() {
+        let render = |right_enabled: bool| {
+            let sample_rate = 44_100.0_f32;
+            let fft_size = 4096;
+            let mut stft = StreamingStft::new_resonator(2, fft_size, 512, sample_rate).unwrap();
+            let mut left_output = Vec::new();
+            let mut right_output = Vec::new();
+            for index in 0..fft_size * 5 {
+                let mut left =
+                    (std::f32::consts::TAU * 440.0 * index as f32 / sample_rate).sin() * 0.25;
+                let mut right = if right_enabled {
+                    (std::f32::consts::TAU * 660.0 * index as f32 / sample_rate).sin() * 0.25
+                } else {
+                    0.0
+                };
+                stft.process_crossover_frame([&mut left, &mut right], 69, 2.0, 4.0, 250.0, 4_000.0);
+                left_output.push(left);
+                right_output.push(right);
+            }
+            (left_output, right_output)
+        };
+        let (left_with_right, right_present) = render(true);
+        let (left_alone, right_silent) = render(false);
+        assert!(
+            left_with_right
+                .iter()
+                .zip(left_alone.iter())
+                .all(|(with_right, alone)| (with_right - alone).abs() <= 1e-6)
+        );
+        assert!(right_silent.iter().all(|&sample| sample == 0.0));
+        assert!(right_present.iter().any(|&sample| sample.abs() > 0.01));
+    }
+
+    #[test]
+    fn crossover_wet_gain_changes_mid_band_audibly() {
+        let render = |wet_level: f32| {
+            let sample_rate = 48_000.0_f32;
+            let fft_size = 4096;
+            let mut stft = StreamingStft::new_resonator(1, fft_size, 512, sample_rate).unwrap();
+            let mut output = Vec::new();
+            for index in 0..fft_size * 6 {
+                let mut sample =
+                    (std::f32::consts::TAU * 440.0 * index as f32 / sample_rate).sin() * 0.25;
+                stft.process_crossover_frame([&mut sample], 69, 2.0, wet_level, 250.0, 4_000.0);
+                output.push(sample);
+            }
+            output
+        };
+        let dry_middle = render(0.0);
+        let wet_middle = render(4.0);
+        let difference_energy: f64 = dry_middle
+            .iter()
+            .zip(wet_middle.iter())
+            .skip(4096 * 3)
+            .map(|(&dry, &wet)| f64::from((wet - dry).powi(2)))
+            .sum();
+        let difference_rms = (difference_energy / (4096 * 3) as f64).sqrt();
+        eprintln!("440 Hz wet-minus-muted RMS at level 4: {difference_rms:.6}");
+        assert!(difference_rms > 0.05, "wet RMS difference={difference_rms}");
     }
 }
