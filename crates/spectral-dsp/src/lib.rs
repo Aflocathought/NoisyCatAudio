@@ -1,8 +1,19 @@
 #![forbid(unsafe_code)]
 
 mod bin_resonator;
+mod crossover;
+mod decay;
+mod modulation;
+mod partial;
+mod resonator;
 mod stft;
 
+pub use decay::{DECAY_POINTS, DEFAULT_DECAY_HZ, DecayCurve, DecayPoint};
+pub use modulation::{MAX_UNISON, ModulationControls, ModulationMode};
+pub use partial::{DEFAULT_PARTIALS, MAX_PARTIALS};
+mod post_unison;
+pub use post_unison::UnisonMode;
+pub use resonator::{MAX_VOICES, ResonatorControls, SpectralResonator};
 pub use stft::{StreamingStft, TransparentStft};
 
 /// Applies one gain value to a sample frame while preserving channel alignment.

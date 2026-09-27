@@ -9,3 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 rustfft = "=6.4.1"
+
+[features]
+# Offline diagnostics only: production CLAP builds contain no timing calls.
+profiling = []

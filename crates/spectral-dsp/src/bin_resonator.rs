@@ -71,8 +71,15 @@ impl BinResonator {
                 }
                 let bin = (frequency * self.fft_size as f32 / self.sample_rate).round() as usize;
                 if bin > 0 && bin < self.fft_size / 2 {
-                    // M2 deliberately snaps each harmonic to one FFT bin. The
-                    // inverse-square-root weight limits bright, dense chords.
+                    // Input projection and IFFT still use the nearest bin,
+                    // but the feedback phase follows the requested partial.
+                    // This prevents a 440 Hz input from cancelling against a
+                    // 445 Hz bin oscillator over successive hops. It is not
+                    // yet the fractional-frequency M3 synthesis path.
+                    let phase =
+                        std::f32::consts::TAU * frequency * self.hop_size as f32 / self.sample_rate;
+                    self.rotation[bin] = Complex32::from_polar(1.0, phase);
+                    // Inverse-square-root weighting limits dense high partials.
                     self.excitation[bin] += 1.0 / (harmonic as f32).sqrt();
                 }
             }
@@ -94,19 +101,47 @@ impl BinResonator {
         spectrum[half] = Complex32::new(0.0, 0.0);
         for bin in 1..half {
             let input = spectrum[bin];
-            let injection = self.excitation[bin] * (1.0 - self.radius);
-            let next = self.state[bin] * self.rotation[bin] * self.radius + input * injection;
-            // A corrupt host sample must not poison a resonator indefinitely.
-            self.state[bin] =
-                if next.re.is_finite() && next.im.is_finite() && next.norm_sqr() > 1e-40 {
-                    next
-                } else {
-                    Complex32::new(0.0, 0.0)
-                };
-            spectrum[bin] = self.state[bin];
+            spectrum[bin] = self.step_bin(bin, input);
             // The negative bin mirrors the positive one for a real IFFT.
-            spectrum[self.fft_size - bin] = self.state[bin].conj();
+            spectrum[self.fft_size - bin] = spectrum[bin].conj();
         }
+    }
+
+    pub fn process_crossover_spectrum(
+        &mut self,
+        spectrum: &mut [Complex32],
+        mid_weights: &[f32],
+        wet_level: f32,
+    ) {
+        if spectrum.len() != self.fft_size || mid_weights.len() != self.state.len() {
+            spectrum.fill(Complex32::new(0.0, 0.0));
+            return;
+        }
+        let half = self.fft_size / 2;
+        // Keep the DSP limit aligned with the public M2 Wet Level parameter.
+        let wet_level = wet_level.clamp(0.0, 16.0);
+        // DC and Nyquist remain dry. Each other positive bin is split by one
+        // real mask, so the complementary dry and wet paths share FFT phase.
+        for bin in 1..half {
+            let dry = spectrum[bin];
+            let wet = self.step_bin(bin, dry);
+            let middle = mid_weights[bin];
+            let output = dry * (1.0 - middle) + wet * (middle * wet_level);
+            spectrum[bin] = output;
+            spectrum[self.fft_size - bin] = output.conj();
+        }
+    }
+
+    fn step_bin(&mut self, bin: usize, input: Complex32) -> Complex32 {
+        let injection = self.excitation[bin] * (1.0 - self.radius);
+        let next = self.state[bin] * self.rotation[bin] * self.radius + input * injection;
+        // A corrupt host sample must not poison a resonator indefinitely.
+        self.state[bin] = if next.re.is_finite() && next.im.is_finite() && next.norm_sqr() > 1e-40 {
+            next
+        } else {
+            Complex32::new(0.0, 0.0)
+        };
+        self.state[bin]
     }
 }
 
@@ -157,5 +192,22 @@ mod tests {
         assert!(resonator.state[old_bin].norm() < old_tail);
         resonator.reset();
         assert!(resonator.state.iter().all(|value| value.norm_sqr() == 0.0));
+    }
+
+    #[test]
+    fn crossover_wet_level_uses_full_parameter_range() {
+        let mut low = BinResonator::new(48_000.0, 4096, 512).unwrap();
+        let mut high = BinResonator::new(48_000.0, 4096, 512).unwrap();
+        low.set_controls(69, 2.0);
+        high.set_controls(69, 2.0);
+        let bin = (440.0_f32 * 4096.0 / 48_000.0).round() as usize;
+        let mut at_four = vec![Complex32::new(0.0, 0.0); 4096];
+        at_four[bin] = Complex32::new(100.0, 0.0);
+        let mut at_sixteen = at_four.clone();
+        let mut mid_weights = vec![0.0; 4096 / 2 + 1];
+        mid_weights[bin] = 1.0;
+        low.process_crossover_spectrum(&mut at_four, &mid_weights, 4.0);
+        high.process_crossover_spectrum(&mut at_sixteen, &mid_weights, 16.0);
+        assert!((at_sixteen[bin] - at_four[bin] * 4.0).norm() < 1e-4);
     }
 }
