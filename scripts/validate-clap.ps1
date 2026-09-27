@@ -1,12 +1,16 @@
 param(
     [ValidatePattern('^[A-Za-z0-9 _-]+$')]
-    [string]$BundleName = "my_spectral_resonator"
+    [string]$BundleName = "my_spectral_resonator",
+    [string]$PluginPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$pluginPath = Join-Path $repoRoot "target\bundled\$BundleName.clap"
+if ([string]::IsNullOrWhiteSpace($PluginPath)) {
+    $PluginPath = Join-Path $repoRoot "target\bundled\$BundleName.clap"
+}
+$PluginPath = [System.IO.Path]::GetFullPath($PluginPath)
 $localValidator = Join-Path $repoRoot "target\tools\bin\clap-validator.exe"
 
 if (-not (Test-Path -LiteralPath $pluginPath -PathType Leaf)) {
