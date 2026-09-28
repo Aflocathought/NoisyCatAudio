@@ -233,7 +233,7 @@ impl StreamingStft {
 impl TransparentStft {
     pub fn new(fft_size: usize, hop_size: usize) -> Option<Self> {
         if fft_size < 2
-            || !fft_size.is_power_of_two()
+            || !fft_size.is_multiple_of(2)
             || hop_size == 0
             || !fft_size.is_multiple_of(hop_size)
         {

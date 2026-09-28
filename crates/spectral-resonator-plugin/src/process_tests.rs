@@ -14,6 +14,7 @@ use std::{
 thread_local! {
     static TRACK_ALLOCATIONS: Cell<bool> = const { Cell::new(false) };
     static ALLOCATIONS: Cell<usize> = const { Cell::new(0) };
+    static RESTART_REQUESTS: Cell<usize> = const { Cell::new(0) };
 }
 
 struct TrackingAllocator;
@@ -151,8 +152,128 @@ impl ProcessContext<SpectralResonator> for Host {
         Err((event, SendEventError::NoOutputBuffer))
     }
     fn set_latency_samples(&self, _: u32) {}
-    fn request_restart(&self) {}
+    fn request_restart(&self) {
+        RESTART_REQUESTS.set(RESTART_REQUESTS.get() + 1);
+    }
     fn set_current_voice_capacity(&self, _: u32) {}
+}
+
+struct ActivateHost(Cell<u32>);
+impl ActivateContext<SpectralResonator> for ActivateHost {
+    fn plugin_api(&self) -> PluginApi {
+        PluginApi::Clap
+    }
+    fn execute(&self, _: ()) {}
+    fn set_latency_samples(&self, samples: u32) {
+        self.0.set(samples);
+    }
+    fn set_current_voice_capacity(&self, _: u32) {}
+}
+
+fn activate_fft(plugin: &mut SpectralResonator, rate: f32) -> u32 {
+    let mut host = ActivateHost(Cell::new(0));
+    assert!(plugin.activate(
+        &SpectralResonator::AUDIO_IO_LAYOUTS[0],
+        &BufferConfig {
+            sample_rate: rate,
+            min_buffer_size: Some(1),
+            max_buffer_size: 256,
+            process_mode: ProcessMode::Realtime,
+        },
+        &mut host
+    ));
+    plugin.reset();
+    host.0.get()
+}
+
+#[test]
+fn every_fft_preset_reports_its_true_stereo_dry_latency_without_callback_allocations() {
+    let mut instance = plugin_with_mix(0.0);
+    for rate in [48_000.0, 96_000.0] {
+        for fft in crate::fft::FftSize::ALL {
+            instance.deactivate();
+            Arc::get_mut(&mut instance.params).unwrap().fft_size = EnumParam::new("FFT Size", fft);
+            assert_eq!(activate_fft(&mut instance, rate), fft.samples() as u32);
+            assert_eq!(instance.capture.shared.fft.samples(), fft.samples() as u32);
+            let mut left = vec![0.0; 16_384];
+            let mut right = left.clone();
+            left[17] = 0.7;
+            left[6001] = -0.2;
+            right[31] = -0.4;
+            let dry_l = left.clone();
+            let dry_r = right.clone();
+            callback(&mut instance, &mut left, &mut right, vec![]);
+            for (output, input) in [(left, dry_l), (right, dry_r)] {
+                for (i, sample) in output.iter().enumerate() {
+                    let expected = if i >= fft.samples() {
+                        input[i - fft.samples()]
+                    } else {
+                        0.0
+                    };
+                    assert!(
+                        (sample - expected).abs() < 2e-6,
+                        "{fft:?} rate={rate} sample={i}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn fft_changes_wait_for_host_activation_and_do_not_loop_restart_requests() {
+    let mut instance = plugin();
+    assert_eq!(activate_fft(&mut instance, 48_000.0), 4096);
+    RESTART_REQUESTS.set(0);
+    for fft in [
+        crate::fft::FftSize::N2048,
+        crate::fft::FftSize::N2048,
+        crate::fft::FftSize::N3072,
+    ] {
+        Arc::get_mut(&mut instance.params).unwrap().fft_size = EnumParam::new("FFT Size", fft);
+        callback(&mut instance, &mut [], &mut [], vec![]);
+        assert_eq!(instance.stft.as_ref().unwrap().latency_samples(), 4096);
+        assert_eq!(RESTART_REQUESTS.get(), 1);
+        ALLOCATIONS.set(0);
+        TRACK_ALLOCATIONS.set(true);
+        instance.reset();
+        TRACK_ALLOCATIONS.set(false);
+        assert_eq!(ALLOCATIONS.get(), 0);
+    }
+    instance.deactivate();
+    assert_eq!(activate_fft(&mut instance, 48_000.0), 3072);
+    callback(&mut instance, &mut [], &mut [], vec![]);
+    assert_eq!(RESTART_REQUESTS.get(), 1);
+    assert_eq!(instance.params.fft_size.value(), crate::fft::FftSize::N3072);
+}
+
+#[test]
+fn mixed_radix_fft_keeps_polyphonic_modulation_and_stereo_isolation() {
+    let mut instance = plugin();
+    let params = Arc::get_mut(&mut instance.params).unwrap();
+    params.fft_size = EnumParam::new("FFT Size", crate::fft::FftSize::N3072);
+    params.unison_voices = IntParam::new("Unison", 8, IntRange::Linear { min: 1, max: 8 });
+    params.mod_mode = EnumParam::new("Motion", params::ModulationMode::Granular);
+    activate_fft(&mut instance, 48_000.0);
+    let mut left: Vec<_> = (0..16_384)
+        .map(|i| {
+            if i < 8192 {
+                (i as f32 * 0.139).sin() * 0.1
+            } else {
+                0.0
+            }
+        })
+        .collect();
+    let mut right = vec![0.0; left.len()];
+    callback(
+        &mut instance,
+        &mut left,
+        &mut right,
+        vec![on(0, 33, 1), on(0, 50, 2), on(64, 69, 3)],
+    );
+    assert!(left.iter().all(|v| v.is_finite()));
+    assert!(left[12_000..].iter().any(|v| v.abs() > 1e-5));
+    assert!(right.iter().all(|v| *v == 0.0));
 }
 
 fn plugin() -> SpectralResonator {
@@ -175,6 +296,8 @@ fn plugin_with_mix(mid_mix: f32) -> SpectralResonator {
     for param in [
         &params.output_gain,
         &params.decay_t60,
+        &params.attack_ms,
+        &params.attack_emphasis_db,
         &params.m2_wet_level,
         &params.mid_mix,
         &params.low_mid_hz,
@@ -249,6 +372,55 @@ fn on(timing: u32, key: u8, id: i32) -> NoteEvent<()> {
         key: Key::Number(key),
         velocity: 1.0,
     }
+}
+
+#[test]
+fn outer_mutes_reach_callback_and_automate_without_allocations_or_block_dependence() {
+    let render = |blocks: &[usize]| {
+        let mut instance = plugin();
+        let mut left = vec![0.2; 32000];
+        let mut right: Vec<_> = (0..32000).map(|i| [0.0, 0.2, 0.0, -0.2][i % 4]).collect();
+        let mut position = 0;
+        let mut block = 0;
+        while position < left.len() {
+            let phase = position / 6400;
+            let p = Arc::get_mut(&mut instance.params).unwrap();
+            p.mute_low = BoolParam::new("Low Mute", matches!(phase, 1 | 3));
+            p.mute_high = BoolParam::new("High Mute", matches!(phase, 2 | 3));
+            let end = (position + blocks[block % blocks.len()])
+                .min((phase + 1) * 6400)
+                .min(left.len());
+            // callback() tracks allocations, including FFT hops and mutes.
+            callback(
+                &mut instance,
+                &mut left[position..end],
+                &mut right[position..end],
+                vec![],
+            );
+            position = end;
+            block += 1;
+        }
+        for phase in 0..5 {
+            let tail = (phase + 1) * 6400 - 256..(phase + 1) * 6400;
+            let low_peak = left[tail.clone()]
+                .iter()
+                .map(|x| x.abs())
+                .fold(0.0_f32, f32::max);
+            let high_peak = right[tail].iter().map(|x| x.abs()).fold(0.0_f32, f32::max);
+            if matches!(phase, 1 | 3) {
+                assert!(low_peak < 1e-6, "phase {phase}: low {low_peak}");
+            } else {
+                assert!(low_peak > 0.19);
+            }
+            if matches!(phase, 2 | 3) {
+                assert!(high_peak < 1e-6, "phase {phase}: high {high_peak}");
+            } else {
+                assert!(high_peak > 0.19);
+            }
+        }
+        [left, right]
+    };
+    assert_eq!(render(&[256]), render(&[17, 509, 64, 1024]));
 }
 
 #[test]
@@ -513,6 +685,35 @@ fn maximum_harmonics_handles_sixteen_voices_eight_unison_and_reset_without_alloc
 }
 
 #[test]
+fn polyphony_limit_changes_in_the_callback_without_allocating_or_crossfeeding() {
+    let mut plugin = plugin();
+    let mut left = vec![0.1; 8192];
+    let mut right = vec![0.0; 8192];
+    let notes = (0..16).map(|id| on(0, 57, id)).collect();
+    callback(&mut plugin, &mut left, &mut right, notes);
+    assert_eq!(plugin.stft.as_ref().unwrap().active_voice_count(), 16);
+    for limit in [3, 1, 8, 16] {
+        let param = &plugin.params.max_polyphony;
+        let normalized = param.preview_normalized(limit);
+        // SAFETY: The test owns the plugin and mutates its parameter between
+        // callbacks, just as host automation does before processing a block.
+        unsafe { param.as_ptr()._internal_set_normalized_value(normalized) };
+        callback(&mut plugin, &mut [], &mut [], vec![]);
+        left.fill(0.1);
+        right.fill(0.0);
+        let notes = (0..16).map(|id| on(0, 57, 100 * limit + id)).collect();
+        callback(&mut plugin, &mut left, &mut right, notes);
+        assert_eq!(
+            plugin.stft.as_ref().unwrap().active_voice_count(),
+            limit as usize
+        );
+        assert!(left.iter().all(|v| v.is_finite()));
+        assert!(left.iter().any(|v| v.abs() > 0.001));
+        assert!(right.iter().all(|&v| v == 0.0));
+    }
+}
+
+#[test]
 fn modulation_curve_automation_is_block_invariant_stereo_isolated_and_allocation_free() {
     use crate::params::ModulationMode;
     let render = |blocks: &[usize], mix: f32| {
@@ -563,6 +764,11 @@ fn modulation_curve_automation_is_block_invariant_stereo_isolated_and_allocation
                         crate::params::UnisonMode::Post,
                     ][stage],
                 );
+                params.align_wet = FloatParam::new(
+                    "Wet Alignment",
+                    [0.0, 0.5, 1.0, 0.37, 0.0][stage],
+                    FloatRange::Linear { min: 0.0, max: 1.0 },
+                );
                 params
                     .voice_spread
                     .smoothed
@@ -575,6 +781,24 @@ fn modulation_curve_automation_is_block_invariant_stereo_isolated_and_allocation
                         DecayMode::Curve
                     },
                 );
+                params.attack_mode = EnumParam::new(
+                    "Attack Response",
+                    if stage == 3 {
+                        params::AttackMode::Natural
+                    } else if stage == 0 || stage == 4 {
+                        params::AttackMode::Reshape
+                    } else {
+                        params::AttackMode::Independent
+                    },
+                );
+                params
+                    .attack_ms
+                    .smoothed
+                    .reset([0.0, 10.0, 400.0, 2000.0, 0.0][stage]);
+                params
+                    .attack_emphasis_db
+                    .smoothed
+                    .reset([6.0, 0.0, 12.0, 3.0, 9.0][stage]);
                 params.decay_points[2]
                     .seconds
                     .smoothed
@@ -675,6 +899,28 @@ fn curve_host_parameter_ids_are_unique_and_match_state_migration() {
             }
         }
     }
+    for param in [
+        &params.attack_ms,
+        &params.attack_emphasis_db,
+        &params.decay_t60,
+    ] {
+        for step in 0..=1100 {
+            let normalized = step as f32 / 1100.0;
+            let display = param.normalized_value_to_string(normalized, true);
+            let parsed = param.string_to_normalized_value(&display).unwrap();
+            assert_eq!(param.normalized_value_to_string(parsed, true), display);
+        }
+    }
+    assert_eq!(
+        params.decay_t60.preview_plain(0.0),
+        spectral_dsp::MIN_DECAY_SECONDS
+    );
+    for point in &params.decay_points {
+        assert_eq!(
+            point.seconds.preview_plain(0.0),
+            spectral_dsp::MIN_DECAY_SECONDS
+        );
+    }
 }
 
 #[test]
@@ -709,7 +955,9 @@ fn voice_spread_reaches_callback_wet_output_and_preserves_dry_and_left_channel()
         "favored left wet channel should retain unity gain"
     );
     let mut tail_energy = 0.0;
-    for i in 8192..24_000 {
+    // The wet onset guard adds one window to the already scheduled pan fade.
+    // Check the settled pan after both the original warm-up and that delay.
+    for i in 8192 + FFT_SIZE..24_000 {
         assert!(
             (left_pan[1][i] - dry[1][i]).abs() < 3e-6,
             "right wet output not panned away at {i}"

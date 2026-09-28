@@ -7,8 +7,14 @@ mod modulation;
 mod partial;
 mod resonator;
 mod stft;
+mod transient;
+mod wet_delay;
+pub use transient::TransientControls;
 
-pub use decay::{DECAY_POINTS, DEFAULT_DECAY_HZ, DecayCurve, DecayPoint};
+pub use decay::{
+    DECAY_POINTS, DEFAULT_DECAY_HZ, DecayCurve, DecayPoint, MAX_DECAY_SECONDS, MIN_DECAY_SECONDS,
+    damping_seconds,
+};
 pub use modulation::{MAX_UNISON, ModulationControls, ModulationMode};
 pub use partial::{DEFAULT_PARTIALS, MAX_PARTIALS};
 mod post_unison;

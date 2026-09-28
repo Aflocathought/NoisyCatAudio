@@ -9,6 +9,7 @@ use spectral_dsp::{
 
 mod analyzer;
 mod editor;
+mod fft;
 mod midi;
 mod params;
 mod state;
@@ -19,7 +20,9 @@ mod process_tests;
 use midi::MidiNotes;
 use params::{DecayMode, OutputMode, PitchSource, SpectralResonatorParams};
 
+#[cfg(test)]
 const FFT_SIZE: usize = 4096;
+#[cfg(test)]
 const HOP_SIZE: usize = 512;
 
 struct SpectralResonator {
@@ -127,10 +130,11 @@ impl Plugin for SpectralResonator {
             return false;
         }
 
+        let fft = self.params.fft_size.value();
         let Some(stft) = ResonatorEngine::new(
             input_channels.get() as usize,
-            FFT_SIZE,
-            HOP_SIZE,
+            fft.samples(),
+            fft.hop(),
             buffer_config.sample_rate,
         ) else {
             return false;
@@ -143,9 +147,16 @@ impl Plugin for SpectralResonator {
         self.notes.reset();
         self.pitch_source = self.params.pitch_source.value();
         self.panic_held = false;
+        self.capture.set_latency(fft.samples());
         self.capture.reset(self.sample_rate);
+        self.capture.shared.fft.activate(fft, self.sample_rate);
         self.route = route_gains(self.params.output_mode.value());
         true
+    }
+
+    fn deactivate(&mut self) {
+        self.capture.shared.fft.deactivate();
+        self.stft = None;
     }
 
     fn reset(&mut self) {
@@ -172,6 +183,17 @@ impl Plugin for SpectralResonator {
             return ProcessStatus::Error("STFT engine is not active");
         };
 
+        // Keep processing with the old engine/latency until the host honors
+        // the request. FFT plans, buffers and tails are replaced in activate().
+        if self
+            .capture
+            .shared
+            .fft
+            .request_restart(self.params.fft_size.value())
+        {
+            context.request_restart();
+        }
+
         // A host can flush notes in a zero-length buffer after changing the
         // pitch source. Synchronize first so those notes survive the next block.
         let source = self.params.pitch_source.value();
@@ -182,9 +204,11 @@ impl Plugin for SpectralResonator {
             self.pitch_source = source;
         }
         self.panic_held = panic;
+        stft.set_voice_limit(self.params.max_polyphony.value() as usize);
         let capture_enabled = self.editor_state.is_open() && self.capture.enabled();
         let mut next_event = context.next_event();
         for (sample_index, mut frame) in buffer.iter_samples().enumerate() {
+            stft.set_voice_limit(self.params.max_polyphony.value() as usize);
             let mut input = [0.0; 2];
             for (i, sample) in frame.iter_mut().enumerate() {
                 input[i] = *sample;
@@ -230,12 +254,24 @@ impl Plugin for SpectralResonator {
                     seconds: self.params.decay_points[i].seconds.smoothed.next(),
                 }),
             };
+            // Advance hidden controls too: switching modes restores the current
+            // automation value, never a stale smoothing ramp or a reset value.
+            let attack_ms = self.params.attack_ms.smoothed.next();
+            let emphasis = self.params.attack_emphasis_db.smoothed.next();
             let controls = ResonatorControls {
                 note,
                 note_token: 0,
                 velocity: 1.0,
                 harmonics: self.params.harmonics.value() as usize,
                 t60: decay,
+                attack_ms: (self.params.attack_mode.value() == params::AttackMode::Independent)
+                    .then_some(attack_ms),
+                transient: (self.params.attack_mode.value() == params::AttackMode::Reshape).then(
+                    || spectral_dsp::TransientControls {
+                        attack_ms,
+                        emphasis: util::db_to_gain(emphasis),
+                    },
+                ),
                 hf_damp: self.params.hf_damp.smoothed.next(),
                 lf_damp: self.params.lf_damp.smoothed.next(),
                 decay_curve: (self.params.decay_mode.value() == DecayMode::Curve)
@@ -253,9 +289,12 @@ impl Plugin for SpectralResonator {
                 voice_spread: self.params.voice_spread.smoothed.next() * 0.01,
                 input_gain: util::db_to_gain(self.params.input_send_db.smoothed.next()),
                 wet_level,
+                align_wet: self.params.align_wet.value(),
                 mid_mix: self.params.mid_mix.smoothed.next() * 0.01,
                 low_hz,
                 high_hz,
+                mute_low: self.params.mute_low.value(),
+                mute_high: self.params.mute_high.value(),
             };
             if source == PitchSource::Midi {
                 stft.process_poly_frame(frame.iter_mut(), controls);
@@ -311,7 +350,7 @@ impl Plugin for SpectralResonator {
         let tail_samples = (longest_decay * 2.0 * self.sample_rate).ceil() as u32;
         ProcessStatus::Tail(
             tail_samples
-                .saturating_add(FFT_SIZE as u32)
+                .saturating_add(stft.latency_samples())
                 .saturating_add(stft.effect_tail_samples()),
         )
     }
@@ -354,6 +393,28 @@ impl ClapPlugin for SpectralResonator {
                 page.add_param(&p.input_send_db);
                 page.add_param(&p.output_mode);
                 page.add_param(&p.panic);
+            });
+            section.add_page("Envelope", |page| {
+                page.add_param(&p.attack_mode);
+                page.add_param(&p.attack_ms);
+                page.add_param(&p.decay_t60);
+                page.add_param(&p.decay_mode);
+                page.add_param(&p.lf_damp);
+                page.add_param(&p.hf_damp);
+                page.add_param(&p.max_polyphony);
+                page.add_param(&p.align_wet);
+            });
+            section.add_page("Transient", |page| {
+                page.add_param(&p.attack_mode);
+                page.add_param(&p.attack_ms);
+                page.add_param(&p.attack_emphasis_db);
+                page.add_param(&p.align_wet);
+            });
+            section.add_page("Routing", |page| {
+                page.add_param(&p.output_mode);
+                page.add_param(&p.output_gain);
+                page.add_param(&p.mute_low);
+                page.add_param(&p.mute_high);
             });
         });
     }

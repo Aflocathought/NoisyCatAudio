@@ -3,6 +3,7 @@
 pub struct CrossoverMask {
     sample_rate: f32,
     weights: Vec<f32>,
+    outer_weights: Vec<[f32; 2]>,
     last_low_hz: f32,
     last_high_hz: f32,
 }
@@ -19,6 +20,7 @@ impl CrossoverMask {
         let mut mask = Self {
             sample_rate,
             weights: vec![0.0; fft_size / 2 + 1],
+            outer_weights: vec![[0.0; 2]; fft_size / 2 + 1],
             last_low_hz: f32::NAN,
             last_high_hz: f32::NAN,
         };
@@ -28,6 +30,10 @@ impl CrossoverMask {
 
     pub fn weights(&self) -> &[f32] {
         &self.weights
+    }
+
+    pub fn outer_weights(&self) -> &[[f32; 2]] {
+        &self.outer_weights
     }
 
     pub fn set_points(&mut self, low_hz: f32, high_hz: f32) {
@@ -64,6 +70,10 @@ impl CrossoverMask {
             // Applying the same real weight to dry and wet FFT frames keeps
             // their phase reference identical and their weights summing to 1.
             *weight = low_power / (1.0 + low_power) / (1.0 + high_power);
+            // Split the existing complementary dry mask into low and high.
+            // Preserve the middle calculation above verbatim for old presets.
+            let above_low = low_power / (1.0 + low_power);
+            self.outer_weights[bin] = [1.0 - above_low, (above_low - *weight).max(0.0)];
         }
     }
 }

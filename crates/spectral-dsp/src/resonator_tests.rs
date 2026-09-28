@@ -38,6 +38,32 @@ fn filled() -> SpectralResonator {
 }
 
 #[test]
+fn variable_polyphony_retires_excess_voices_and_preserves_retained_state() {
+    let mut engine = filled();
+    let retained = engine.voices[0].state;
+    let retiring = engine.voices[15].state;
+    engine.set_voice_limit(2);
+    assert_eq!(engine.voices[0].state, retained);
+    assert_eq!(engine.voices[15].state, retiring);
+    assert!(engine.voices[15].fading);
+    hop(&mut engine);
+    assert!(engine.voices[15].gain > 0.0);
+    hop(&mut engine);
+    assert_eq!(engine.active_voice_count(), 2);
+    for token in 100..120 {
+        engine.note_on(60, token, 1.0);
+        hop(&mut engine);
+    }
+    for _ in 0..3 {
+        hop(&mut engine);
+    }
+    assert_eq!(engine.active_voice_count(), 2);
+    engine.set_voice_limit(16);
+    engine.note_on(64, 200, 1.0);
+    assert_eq!(engine.active_voice_count(), 3);
+}
+
+#[test]
 fn sixteen_voices_with_eight_unison_sum_independently_and_keep_release_tails() {
     let mut engines = [engine(), engine(), engine(), engine()];
     let controls = ResonatorControls {

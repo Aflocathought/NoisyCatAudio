@@ -1,5 +1,9 @@
 use nice_plug::prelude::*;
 use spectral_dsp::{DECAY_POINTS, DEFAULT_DECAY_HZ, DEFAULT_PARTIALS, MAX_PARTIALS, MAX_UNISON};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU32},
+};
 
 #[derive(Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
@@ -29,6 +33,17 @@ impl From<UnisonMode> for spectral_dsp::UnisonMode {
             UnisonMode::Post => Self::Post,
         }
     }
+}
+
+#[derive(Enum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttackMode {
+    #[id = "natural"]
+    Natural,
+    #[id = "independent"]
+    Independent,
+    #[id = "reshape"]
+    #[name = "Reshape wet"]
+    Reshape,
 }
 
 #[derive(Enum, Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,8 +106,8 @@ impl DecayPointParams {
                 format!("Decay Point {} T60", index + 1),
                 2.0,
                 FloatRange::Skewed {
-                    min: 0.05,
-                    max: 12.0,
+                    min: spectral_dsp::MIN_DECAY_SECONDS,
+                    max: spectral_dsp::MAX_DECAY_SECONDS,
                     factor: FloatRange::skew_factor(-1.5),
                 },
             )
@@ -113,6 +128,15 @@ pub enum PitchSource {
 
 #[derive(Params)]
 pub struct SpectralResonatorParams {
+    #[id = "fft_size"]
+    pub fft_size: EnumParam<crate::fft::FftSize>,
+    // Editor preferences are preset fields, never automatable audio controls.
+    #[persist = "ui_max_fps"]
+    pub ui_max_fps: Arc<AtomicU32>,
+    #[persist = "ui_debug_fps"]
+    pub ui_debug_fps: AtomicBool,
+    #[id = "max_polyphony"]
+    pub max_polyphony: IntParam,
     #[id = "output_mode"]
     pub output_mode: EnumParam<OutputMode>,
     /// Stable ID keeps host automation and saved projects attached to this control.
@@ -143,6 +167,13 @@ pub struct SpectralResonatorParams {
     #[id = "decay_t60"]
     pub decay_t60: FloatParam,
 
+    #[id = "attack_mode"]
+    pub attack_mode: EnumParam<AttackMode>,
+    #[id = "attack_ms"]
+    pub attack_ms: FloatParam,
+    #[id = "attack_emphasis_db"]
+    pub attack_emphasis_db: FloatParam,
+
     #[id = "decay_mode"]
     pub decay_mode: EnumParam<DecayMode>,
     #[nested(array, group = "Decay Curve")]
@@ -172,6 +203,9 @@ pub struct SpectralResonatorParams {
     #[id = "m2_wet_level"]
     pub m2_wet_level: FloatParam,
 
+    #[id = "align_wet"]
+    pub align_wet: FloatParam,
+
     #[id = "mid_mix"]
     pub mid_mix: FloatParam,
 
@@ -180,12 +214,26 @@ pub struct SpectralResonatorParams {
 
     #[id = "mid_high_hz"]
     pub mid_high_hz: FloatParam,
+    #[id = "mute_low"]
+    pub mute_low: BoolParam,
+    #[id = "mute_high"]
+    pub mute_high: BoolParam,
 }
 
 impl Default for SpectralResonatorParams {
     fn default() -> Self {
         Self {
+            fft_size: EnumParam::new("FFT Size", crate::fft::FftSize::N4096).non_automatable(),
+            ui_max_fps: Arc::new(AtomicU32::new(60)),
+            ui_debug_fps: AtomicBool::new(false),
+            max_polyphony: IntParam::new(
+                "Maximum Polyphony",
+                16,
+                IntRange::Linear { min: 1, max: 16 },
+            ),
             output_mode: EnumParam::new("Main Output", OutputMode::Mixed),
+            mute_low: BoolParam::new("Low Mute", false),
+            mute_high: BoolParam::new("High Mute", false),
             output_gain: FloatParam::new(
                 "Output Gain",
                 1.0,
@@ -229,11 +277,37 @@ impl Default for SpectralResonatorParams {
                 "Decay T60",
                 2.0,
                 FloatRange::Linear {
-                    min: 0.05,
+                    min: spectral_dsp::MIN_DECAY_SECONDS,
+                    max: spectral_dsp::MAX_DECAY_SECONDS,
+                },
+            )
+            .with_unit(" s")
+            .with_value_to_string(formatters::v2s_f32_rounded(3))
+            .with_smoother(SmoothingStyle::Linear(50.0)),
+            attack_mode: EnumParam::new("Attack Response", AttackMode::Natural),
+            attack_ms: FloatParam::new(
+                "Attack (90%)",
+                10.0,
+                FloatRange::Skewed {
+                    min: 0.0,
+                    max: 2000.0,
+                    factor: FloatRange::skew_factor(-2.0),
+                },
+            )
+            .with_unit(" ms")
+            .with_value_to_string(formatters::v2s_f32_rounded(2))
+            .with_smoother(SmoothingStyle::Linear(20.0)),
+            attack_emphasis_db: FloatParam::new(
+                "Transient Emphasis",
+                6.0,
+                FloatRange::Linear {
+                    min: 0.0,
                     max: 12.0,
                 },
             )
-            .with_smoother(SmoothingStyle::Linear(50.0)),
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_rounded(2))
+            .with_smoother(SmoothingStyle::Linear(20.0)),
             decay_mode: EnumParam::new("Decay Mode", DecayMode::Damping),
             decay_points: std::array::from_fn(DecayPointParams::new),
             mod_mode: EnumParam::new("Modulation Mode", ModulationMode::Off),
@@ -316,6 +390,14 @@ impl Default for SpectralResonatorParams {
                 },
             )
             .with_smoother(SmoothingStyle::Linear(20.0)),
+            // DSP crossfades fixed delay taps; a parameter smoother would keep
+            // retargeting the delay instead of selecting the requested sample.
+            align_wet: FloatParam::new(
+                "Wet Alignment",
+                0.5,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit(" windows"),
             mid_mix: FloatParam::new(
                 "Mid Mix",
                 100.0,

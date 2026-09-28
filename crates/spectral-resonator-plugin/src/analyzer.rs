@@ -14,7 +14,7 @@ pub const ROWS_PER_SECOND: f32 = 30.0;
 pub const HISTORY_SECONDS: f32 = HISTORY as f32 / ROWS_PER_SECOND;
 // Audio alignment is independent of display resolution. Increasing the bass
 // analysis window must never delay the dry tap or change the audio engine.
-const AUDIO_DELAY: usize = 4096;
+const MAX_AUDIO_DELAY: usize = 4096;
 const FAST_SIZE: usize = 4096;
 const BASS_SIZE: usize = 16384;
 
@@ -27,6 +27,7 @@ pub struct AudioPacket {
 }
 
 pub struct SharedAnalysis {
+    pub fft: crate::fft::FftStatus,
     pub enabled: AtomicBool,
     pub queue: ArrayQueue<AudioPacket>,
 }
@@ -34,6 +35,7 @@ pub struct SharedAnalysis {
 impl SharedAnalysis {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
+            fft: crate::fft::FftStatus::default(),
             enabled: AtomicBool::new(false),
             queue: ArrayQueue::new(32),
         })
@@ -43,6 +45,7 @@ impl SharedAnalysis {
 pub struct AudioCapture {
     pub shared: Arc<SharedAnalysis>,
     delay: Box<[[f32; 2]]>,
+    delay_samples: usize,
     packet: AudioPacket,
     position: usize,
     count: usize,
@@ -53,7 +56,8 @@ impl AudioCapture {
     pub fn new(shared: Arc<SharedAnalysis>) -> Self {
         Self {
             shared,
-            delay: vec![[0.0; 2]; AUDIO_DELAY].into_boxed_slice(),
+            delay: vec![[0.0; 2]; MAX_AUDIO_DELAY].into_boxed_slice(),
+            delay_samples: MAX_AUDIO_DELAY,
             packet: AudioPacket {
                 samples: [[0.0; 4]; BLOCK],
                 start: 0,
@@ -75,10 +79,17 @@ impl AudioCapture {
         self.packet.rate = rate;
     }
 
+    pub fn set_latency(&mut self, samples: usize) {
+        // The maximum ring is allocated once; changing/resetting a latency
+        // never allocates on the audio thread or changes the display FFT size.
+        assert!((1..=self.delay.len()).contains(&samples));
+        self.delay_samples = samples;
+    }
+
     pub fn push(&mut self, input: [f32; 2], wet: [f32; 2], enabled: bool) {
         let dry = self.delay[self.position];
         self.delay[self.position] = input.map(|v| if v.is_finite() { v } else { 0.0 });
-        self.position = (self.position + 1) % AUDIO_DELAY;
+        self.position = (self.position + 1) % self.delay_samples;
         if enabled {
             if self.count == 0 {
                 self.packet.start = self.clock;
@@ -232,6 +243,12 @@ impl Analyzer {
         self.filled = 0;
         self.since_row = 0;
         self.expected = None;
+    }
+
+    /// Fractional time since the latest analysed row, for smooth rendering at
+    /// any UI rate while retaining the same 30 FFT updates per second.
+    pub fn row_phase(&self) -> f32 {
+        (self.since_row as f32 / (self.rate / ROWS_PER_SECOND).round().max(1.0)).min(1.0)
     }
 
     pub fn ingest(&mut self, packet: AudioPacket, mut row: impl FnMut([[f32; BINS]; 2], bool)) {
@@ -389,6 +406,24 @@ mod tests {
             capture.push([0.0; 2], [0.0; 2], true);
         }
         assert_eq!(shared.queue.len(), 32);
+    }
+
+    #[test]
+    fn capture_follows_each_audio_fft_latency_after_reactivation() {
+        let shared = SharedAnalysis::new();
+        let mut capture = AudioCapture::new(shared.clone());
+        for latency in [4096, 1024, 3072, 2048, 4096] {
+            while shared.queue.pop().is_some() {}
+            capture.set_latency(latency);
+            capture.reset(48_000.0);
+            for i in 0..latency + BLOCK {
+                capture.push([if i == 0 { 1.0 } else { 0.0 }, 0.0], [0.0; 2], true);
+            }
+            let packets: Vec<_> = std::iter::from_fn(|| shared.queue.pop()).collect();
+            for (i, frame) in packets.iter().flat_map(|p| p.samples).enumerate() {
+                assert_eq!(frame[0], if i == latency { 1.0 } else { 0.0 });
+            }
+        }
     }
     #[test]
     fn antiphase_stereo_is_visible_and_gaps_reset_analysis() {

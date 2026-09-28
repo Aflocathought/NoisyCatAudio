@@ -85,17 +85,16 @@ impl Partial {
 
     #[cfg(test)]
     pub fn synthesize(&self, state: Complex32, spectrum: &mut [Complex32]) {
-        // Engine FFT sizes are powers of two. Mirror wrapping can therefore
-        // use a bit mask, avoiding an integer division for every kernel tap
-        // when thousands of partials are synthesized across eight voices.
-        debug_assert!(spectrum.len().is_power_of_two());
-        let wrap_mask = spectrum.len() - 1;
         let amplitude = state * (spectrum.len() as f32 * 0.5);
         for tap in &self.taps {
             let value = amplitude * tap.weight;
             spectrum[tap.bin] += value;
             // Include both lobes even if they overlap around DC or Nyquist.
-            let mirror = (spectrum.len() - tap.bin) & wrap_mask;
+            let mirror = if tap.bin == 0 {
+                0
+            } else {
+                spectrum.len() - tap.bin
+            };
             spectrum[mirror] += value.conj();
         }
     }

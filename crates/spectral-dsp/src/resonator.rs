@@ -8,6 +8,8 @@ use crate::{
     modulation::{ModulationBank, ModulationControls, ModulationKernel},
     partial::{DEFAULT_PARTIALS, MAX_PARTIALS, NoteTemplate},
     post_unison::{PostUnison, UnisonMode},
+    transient::{TransientControls, TransientShaper},
+    wet_delay::WetDelay,
 };
 
 const ZERO: Complex32 = Complex32::new(0.0, 0.0);
@@ -34,6 +36,22 @@ const VOICE_PAN_POSITIONS: [f32; 8] = [
 #[path = "resonator_tests.rs"]
 mod poly_tests;
 
+#[cfg(test)]
+#[path = "resonator_envelope_tests.rs"]
+mod envelope_tests;
+
+#[cfg(test)]
+#[path = "resonator_timing_tests.rs"]
+mod timing_tests;
+
+#[cfg(test)]
+#[path = "resonator_transient_tests.rs"]
+mod transient_tests;
+
+#[cfg(test)]
+#[path = "resonator_band_mute_tests.rs"]
+mod band_mute_tests;
+
 /// Shared input-time controls. `note` drives the internal/mono convenience
 /// path; the polyphonic path receives identities through note_on/note_off.
 #[derive(Clone, Copy, Debug)]
@@ -44,6 +62,12 @@ pub struct ResonatorControls {
     pub velocity: f32,
     pub harmonics: usize,
     pub t60: f32,
+    /// None retains the natural resonator buildup. Some sets the independent
+    /// rising response's time to 90%, in milliseconds (0 means one hop).
+    pub attack_ms: Option<f32>,
+    /// Shape reconstructed wet onsets against input delayed by FFT latency.
+    /// This mode also uses the fastest spectral excitation response.
+    pub transient: Option<TransientControls>,
     pub hf_damp: f32,
     pub lf_damp: f32,
     /// None selects legacy harmonic-index damping; Some selects absolute Hz.
@@ -54,10 +78,16 @@ pub struct ResonatorControls {
     pub voice_spread: f32,
     pub input_gain: f32,
     pub wet_level: f32,
+    /// Wet pre-delay in synthesis windows, 0..1 (0.5 is half a window).
+    /// This shifts wet timing without changing host/dry latency.
+    pub align_wet: f32,
     /// Linear dry/wet blend within the middle band only, normalized to 0..1.
     pub mid_mix: f32,
     pub low_hz: f32,
     pub high_hz: f32,
+    /// Mute only the outer dry contributions, never resonant excitation/tails.
+    pub mute_low: bool,
+    pub mute_high: bool,
 }
 
 #[cfg(test)]
@@ -376,6 +406,8 @@ impl Default for ResonatorControls {
             velocity: 1.0,
             harmonics: DEFAULT_PARTIALS,
             t60: 2.0,
+            attack_ms: None,
+            transient: None,
             hf_damp: 0.25,
             lf_damp: 0.0,
             decay_curve: None,
@@ -384,9 +416,12 @@ impl Default for ResonatorControls {
             voice_spread: 0.0,
             input_gain: 1.0,
             wet_level: 4.0,
+            align_wet: 0.0,
             mid_mix: 1.0,
             low_hz: 250.0,
             high_hz: 4_000.0,
+            mute_low: false,
+            mute_high: false,
         }
     }
 }
@@ -482,12 +517,15 @@ pub struct SpectralResonator {
     // does not put the entire voice pool on a host's small audio-thread stack.
     // Its length and allocation never change in process/reset/note handling.
     voices: Box<[Voice]>,
+    voice_limit: usize,
     modulation_banks: Box<[ModulationBank]>,
     modulation_kernel: ModulationKernel,
     post_unison: PostUnison,
     // Exact time-domain contributions, retained for metering and host routing.
     last_dry: [f32; 2],
     last_wet: [f32; 2],
+    wet_delay: WetDelay,
+    transient: TransientShaper,
     post_guard: f32,
     note_order: u64,
     mono_note: Option<(i32, u64)>,
@@ -496,7 +534,10 @@ pub struct SpectralResonator {
     decay_curve: Option<DecayCurve>,
     curve_revision: u64,
     curve_mix: f32,
+    attack_mix: f32,
+    attack_radius: f32,
     crossover: CrossoverMask,
+    outer_band_gains: Option<[f32; 2]>,
     forward: Arc<dyn Fft<f32>>,
     inverse: Arc<dyn Fft<f32>>,
     input_spectrum: Vec<Complex32>,
@@ -519,7 +560,7 @@ impl SpectralResonator {
             || !rate.is_finite()
             || !(1_000.0..=768_000.0).contains(&rate)
             || !(256..=16_384).contains(&size)
-            || !size.is_power_of_two()
+            || !size.is_multiple_of(2)
             || hop == 0
             || hop > size / 2
             || !size.is_multiple_of(hop)
@@ -550,11 +591,14 @@ impl SpectralResonator {
                 .map(|note| NoteTemplate::new(note, rate as f64, size, hop))
                 .collect(),
             voices: (0..MAX_VOICES).map(|_| Voice::default()).collect(),
+            voice_limit: MAX_VOICES,
             modulation_banks: (0..MAX_VOICES).map(|_| ModulationBank::new()).collect(),
             modulation_kernel: ModulationKernel::new(size, rate),
             post_unison: PostUnison::new(rate),
             last_dry: [0.0; 2],
             last_wet: [0.0; 2],
+            wet_delay: WetDelay::new(size, rate),
+            transient: TransientShaper::new(rate),
             post_guard: 0.0,
             note_order: 0,
             mono_note: None,
@@ -563,7 +607,10 @@ impl SpectralResonator {
             decay_curve: None,
             curve_revision: 1,
             curve_mix: 0.0,
+            attack_mix: 0.0,
+            attack_radius: 0.0,
             crossover: CrossoverMask::new(rate, size)?,
+            outer_band_gains: None,
             forward,
             inverse,
             input_spectrum: vec![ZERO; size],
@@ -585,7 +632,9 @@ impl SpectralResonator {
 
     /// Variable delay is part of the wet effect, not dry-path host latency.
     pub fn effect_tail_samples(&self) -> u32 {
-        self.post_unison.max_delay_samples()
+        // Keep this conservative while switching back to the original timing:
+        // the delayed branch and its crossfade can still emit pending audio.
+        self.post_unison.max_delay_samples() + self.size as u32
     }
 
     /// Offline accumulated times: controls, modulation, input FFT,
@@ -611,10 +660,14 @@ impl SpectralResonator {
         self.note_order = 0;
         self.mono_note = None;
         self.curve_mix = 0.0;
+        self.attack_mix = 0.0;
         self.post_unison.reset();
         self.last_dry = [0.0; 2];
         self.last_wet = [0.0; 2];
+        self.wet_delay.reset();
+        self.transient.reset();
         self.post_guard = 0.0;
+        self.outer_band_gains = None;
     }
 
     /// Musical panic fades wet states; it deliberately preserves aligned dry
@@ -661,21 +714,23 @@ impl SpectralResonator {
             gate_sum: 0.0,
             order: self.note_order,
         };
-        if let Some(voice) = self.voices.iter_mut().find(|voice| voice.note.is_none()) {
+        if let Some(voice) = self.voices[..self.voice_limit]
+            .iter_mut()
+            .find(|voice| voice.note.is_none())
+        {
             *voice = Voice::start(incoming);
             return;
         }
         // Prefer the quietest released tail. Only steal a held voice if every
         // available one is held, in which case the oldest held note gives way.
-        let released = self
-            .voices
+        let released = self.voices[..self.voice_limit]
             .iter()
             .enumerate()
             .filter(|(_, voice)| !voice.fading && !voice.gate)
             .min_by(|a, b| a.1.energy.total_cmp(&b.1.energy))
             .map(|(index, _)| index);
         let oldest = || {
-            self.voices
+            self.voices[..self.voice_limit]
                 .iter()
                 .enumerate()
                 .filter(|(_, voice)| !voice.fading)
@@ -685,7 +740,7 @@ impl SpectralResonator {
         let index = released.or_else(oldest).unwrap_or_else(|| {
             // All slots are already retiring: latest-note priority replaces the
             // oldest waiting note, without restarting or cutting a playing fade.
-            self.voices
+            self.voices[..self.voice_limit]
                 .iter()
                 .enumerate()
                 .max_by_key(|(_, voice)| {
@@ -700,6 +755,22 @@ impl SpectralResonator {
         voice.gate = false;
         voice.gate_sum = 0.0;
         voice.pending = Some(incoming);
+    }
+
+    /// The preallocated pool stays intact. Lowering the limit retires excess
+    /// slots through the existing fade, and cancels their queued replacements.
+    pub fn set_voice_limit(&mut self, limit: usize) {
+        let limit = limit.clamp(1, MAX_VOICES);
+        if limit == self.voice_limit {
+            return;
+        }
+        self.voice_limit = limit;
+        for voice in &mut self.voices[limit..] {
+            voice.fading = true;
+            voice.gate = false;
+            voice.gate_sum = 0.0;
+            voice.pending = None;
+        }
     }
 
     pub fn note_off(&mut self, token: u64) {
@@ -762,7 +833,16 @@ impl SpectralResonator {
                 .get(index)
                 .map_or(0.0, |channel| channel.wet_output[self.position])
         });
-        let wet = self.post_unison.process(wet);
+        // Before overwriting the input ring, this slot contains x[n - N]. Its
+        // timing matches the dry reference without another buffer or latency.
+        let reference = std::array::from_fn(|index| {
+            self.channels
+                .get(index)
+                .map_or(0.0, |channel| channel.input[self.position])
+        });
+        let wet = self.transient.process(wet, reference, controls.transient);
+        let original_wet = self.post_unison.process(wet);
+        let wet = self.wet_delay.process(original_wet, controls.align_wet);
         self.last_wet = wet;
         for (index, (channel, sample)) in self.channels.iter_mut().zip(samples).enumerate() {
             channel.input[self.position] = if sample.is_finite() { *sample } else { 0.0 };
@@ -792,6 +872,17 @@ impl SpectralResonator {
         let mut stage = std::time::Instant::now();
         let input_gain = bounded(controls.input_gain, 1.0, 0.0, 4.0);
         let fade_step = (self.hop as f32 / (0.02 * self.rate)).min(1.0);
+        let band_targets = [
+            if controls.mute_low { 0.0 } else { 1.0 },
+            if controls.mute_high { 0.0 } else { 1.0 },
+        ];
+        // Start at the saved state without a startup leak, then fade changes
+        // over 20 ms of hop updates. Existing Hann overlap smooths synthesis.
+        let mut band_gains = self.outer_band_gains.unwrap_or(band_targets);
+        for (gain, target) in band_gains.iter_mut().zip(band_targets) {
+            *gain += (target - *gain).clamp(-fade_step, fade_step);
+        }
+        self.outer_band_gains = Some(band_gains);
         let spread = if self.channels.len() == 2 {
             bounded(controls.voice_spread, 0.0, 0.0, 1.0)
         } else {
@@ -830,16 +921,35 @@ impl SpectralResonator {
             voice.gate_sum = 0.0;
             voice.energy = 0.0;
         }
-        let t60 = bounded(controls.t60, 2.0, 0.05, 12.0);
+        let t60 = bounded(
+            controls.t60,
+            2.0,
+            crate::MIN_DECAY_SECONDS,
+            crate::MAX_DECAY_SECONDS,
+        );
+        let spectral_attack = if controls.transient.is_some() {
+            Some(0.0)
+        } else {
+            controls.attack_ms
+        };
+        let attack_target = if spectral_attack.is_some() { 1.0 } else { 0.0 };
+        self.attack_mix += (attack_target - self.attack_mix).clamp(-fade_step, fade_step);
+        if let Some(attack_ms) = spectral_attack {
+            let attack_ms = bounded(attack_ms, 10.0, 0.0, 2000.0);
+            self.attack_radius = if attack_ms == 0.0 {
+                0.0
+            } else {
+                10.0_f32.powf(-(self.hop as f32) * 1000.0 / (self.rate * attack_ms))
+            };
+        }
+        // Retain the last pole during the short transition back to Natural.
+        // Changing the hidden Attack value cannot interrupt that transition.
         let hf = bounded(controls.hf_damp, 0.25, 0.0, 1.0);
         let lf = bounded(controls.lf_damp, 0.0, 0.0, 1.0);
         if self.damping_controls != [t60, hf, lf] {
             self.damping_controls = [t60, hf, lf];
             for (h, radius) in self.radii.iter_mut().enumerate() {
-                let octave = ((h + 1) as f32 / 4.0).log2();
-                let decay = (t60
-                    * 2.0_f32.powf(-2.0 * hf * octave.max(0.0) - 2.0 * lf * (-octave).max(0.0)))
-                .clamp(0.05, 12.0);
+                let decay = crate::damping_seconds((h + 1) as f32, t60, hf, lf);
                 *radius = 10.0_f32.powf(-3.0 * self.hop as f32 / (self.rate * decay));
             }
         }
@@ -951,14 +1061,35 @@ impl SpectralResonator {
                 }
                 for (h, partial) in template.partials.iter().enumerate() {
                     let state = &mut voice.state[channel_index][h];
-                    let radius = if h < harmonics {
-                        self.radii[h] + self.curve_mix * (voice.curve_radii[h] - self.radii[h])
+                    let mut radius = if h < harmonics {
+                        if self.curve_mix == 1.0 {
+                            // Avoid cancellation when a 5 ms curve radius is
+                            // orders of magnitude below the damping radius.
+                            voice.curve_radii[h]
+                        } else {
+                            self.radii[h] + self.curve_mix * (voice.curve_radii[h] - self.radii[h])
+                        }
                     } else {
                         retiring_radius
                     };
                     let excitation = if !voice.fading && h < harmonics && voice.drive > 0.0 {
-                        partial.project(&self.input_spectrum)
-                            * (voice.drive * partial.level * (1.0 - radius))
+                        let projected = partial.project(&self.input_spectrum);
+                        let drive = voice.drive * partial.level;
+                        // A normalized resonator normally shares one pole for
+                        // buildup and release. On a rising spectral envelope,
+                        // select an independent attack pole; on falling input
+                        // (including note-off), retain the original T60 pole.
+                        // This responds to repeated audio transients as well as
+                        // MIDI notes. Both terms use the same radius, keeping a
+                        // bounded convex blend instead of boosting excitation
+                        // into a long feedback tail. L/R decide independently.
+                        // Natural skips this nonlinear shaping completely.
+                        if self.attack_mix > 0.0
+                            && projected.norm_sqr() * drive * drive > state.norm_sqr()
+                        {
+                            radius += self.attack_mix * (self.attack_radius - radius);
+                        }
+                        projected * (drive * (1.0 - radius))
                     } else {
                         ZERO
                     };
@@ -1020,6 +1151,7 @@ impl SpectralResonator {
             // Both dry and wet now contain exactly one Hann window, so the same
             // real crossover mask and constant OLA normalization apply to both.
             let weights = self.crossover.weights();
+            let outer_weights = self.crossover.outer_weights();
             for k in 0..self.size {
                 let dry = self.input_spectrum[k] * 0.5
                     - (self.input_spectrum[(k + self.size - 1) % self.size]
@@ -1038,7 +1170,18 @@ impl SpectralResonator {
                 let protection = ((self.rate * 0.47 - hz) / (self.rate * 0.02)).clamp(0.0, 1.0);
                 let wet = self.wet_spectrum[k]
                     * (middle * wet_level * (1.0 - self.post_guard * (1.0 - protection)));
-                let dry = dry * (1.0 - middle);
+                let dry_gain = if band_gains == [1.0; 2] {
+                    // Exact legacy path when both switches are off.
+                    1.0 - middle
+                } else {
+                    let [low, high] = outer_weights[k.min(self.size - k)];
+                    // Sum retained regions instead of subtracting: muting
+                    // both outer bands at 100% wet makes dry exactly zero.
+                    weights[k.min(self.size - k)] * (1.0 - mid_mix)
+                        + low * band_gains[0]
+                        + high * band_gains[1]
+                };
+                let dry = dry * dry_gain;
                 // Both spectra are Hermitian. Packing D+iW into one complex
                 // IFFT gives dry in its real part and wet in its imaginary
                 // part, keeping the same FFT count while separating routing.

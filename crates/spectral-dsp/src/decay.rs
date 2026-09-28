@@ -1,6 +1,8 @@
 //! Absolute-frequency decay controls. Seconds are the user-facing quantity;
 //! converting those times to a stable feedback radius remains a DSP detail.
 pub const DECAY_POINTS: usize = 6;
+pub const MIN_DECAY_SECONDS: f32 = 0.005;
+pub const MAX_DECAY_SECONDS: f32 = 12.0;
 pub const DEFAULT_DECAY_HZ: [f32; DECAY_POINTS] = [80.0, 250.0, 1000.0, 4000.0, 10_000.0, 20_000.0];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -23,7 +25,7 @@ impl Default for DecayCurve {
 }
 
 impl DecayCurve {
-    pub(crate) fn prepared(mut self) -> Self {
+    pub fn prepared(mut self) -> Self {
         for (point, fallback) in self.points.iter_mut().zip(DEFAULT_DECAY_HZ) {
             point.hz = if point.hz.is_finite() {
                 point.hz.clamp(20.0, 20_000.0)
@@ -31,7 +33,7 @@ impl DecayCurve {
                 fallback
             };
             point.seconds = if point.seconds.is_finite() {
-                point.seconds.clamp(0.05, 12.0)
+                point.seconds.clamp(MIN_DECAY_SECONDS, MAX_DECAY_SECONDS)
             } else {
                 2.0
             };
@@ -49,7 +51,8 @@ impl DecayCurve {
         self
     }
 
-    pub(crate) fn seconds_at(&self, hz: f32) -> f32 {
+    /// Query a curve returned by `prepared()`, using the same interpolation as DSP.
+    pub fn seconds_at(&self, hz: f32) -> f32 {
         let right = self.points.partition_point(|point| point.hz <= hz);
         if right == DECAY_POINTS {
             return self.points[DECAY_POINTS - 1].seconds;
@@ -71,6 +74,14 @@ impl DecayCurve {
         // positive times and no overshoot between user-specified anchors.
         a.seconds * (b.seconds / a.seconds).powf(fraction)
     }
+}
+
+/// Damping is relative to partial order, with its pivot at the fourth partial.
+/// Shared by the engine and graph so visualization cannot drift from the DSP.
+pub fn damping_seconds(partial: f32, t60: f32, hf: f32, lf: f32) -> f32 {
+    let octave = (partial.max(1.0) / 4.0).log2();
+    (t60 * 2.0_f32.powf(-2.0 * hf * octave.max(0.0) - 2.0 * lf * (-octave).max(0.0)))
+        .clamp(MIN_DECAY_SECONDS, MAX_DECAY_SECONDS)
 }
 
 #[cfg(test)]

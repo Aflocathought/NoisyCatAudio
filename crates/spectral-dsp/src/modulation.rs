@@ -138,12 +138,18 @@ impl ModulationKernel {
         }
         // The positive lobe can wrap around DC. Preserve every wrapped tap;
         // the later mirror pass handles overlap at both DC and Nyquist.
-        let mask = self.size - 1;
         for tap in 0..TAPS {
             let a = row[tap];
             let b = next_row[tap];
             let weight = a + (b - a) * position.fraction;
-            let bin = ((position.bin + tap as i32 - RADIUS) as usize) & mask;
+            let raw_bin = position.bin + tap as i32 - RADIUS;
+            // Keep the established fast wrap for powers of two. Mixed-radix
+            // windows (3072) need Euclidean modulo, including negative DC taps.
+            let bin = if self.size.is_power_of_two() {
+                (raw_bin as usize) & (self.size - 1)
+            } else {
+                raw_bin.rem_euclid(self.size as i32) as usize
+            };
             let value = amplitude * weight;
             spectrum[bin] += value;
         }
@@ -418,7 +424,7 @@ mod tests {
 
     #[test]
     fn contiguous_synthesis_matches_scalar_with_overlaps_and_accumulated_spectrum() {
-        for size in [256, 4096, 16_384] {
+        for size in [256, 1024, 2048, 3072, 4096, 16_384] {
             let kernel = ModulationKernel::new(size, 48_000.0);
             let mut actual: Vec<_> = (0..size)
                 .map(|i| Complex32::new((i as f32).sin() * 0.1, 0.03))
@@ -450,9 +456,9 @@ mod tests {
                     let a = kernel.rows[position.row][tap];
                     let b = kernel.rows[position.row + 1][tap];
                     let value = amplitude * (a + (b - a) * position.fraction);
-                    let bin = ((position.bin + tap as i32 - RADIUS) as usize) & (size - 1);
+                    let bin = (position.bin + tap as i32 - RADIUS).rem_euclid(size as i32) as usize;
                     expected[bin] += value;
-                    expected[size.wrapping_sub(bin) & (size - 1)] += value.conj();
+                    expected[(size - bin) % size] += value.conj();
                 }
             }
             complete_conjugate_spectrum(&mut actual);
