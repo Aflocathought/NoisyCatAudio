@@ -1782,8 +1782,6 @@ impl<P: ClapPlugin> Wrapper<P> {
                             // Also store this for later, so we can reinitialize the plugin after restoring state
                             wrapper.current_buffer_config.store(Some(buffer_config));
 
-                            wrapper.is_activated.store(true, Ordering::SeqCst);
-
                             result = true;
 
                             break;
@@ -1809,6 +1807,11 @@ impl<P: ClapPlugin> Wrapper<P> {
 
         // NOTE: This needs to be dropped after the `plugin` lock to avoid deadlocks
         drop(activate_context);
+
+        // Activation defers latency publication until the plugin lock is gone.
+        // Publish that latency while still inactive; otherwise the initial
+        // declaration (or an FFT-size restart) requests another host restart.
+        wrapper.is_activated.store(result, Ordering::SeqCst);
 
         result
     }

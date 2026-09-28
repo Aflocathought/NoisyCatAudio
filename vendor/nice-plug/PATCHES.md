@@ -14,6 +14,12 @@ Only two source files differ from the published crate:
   when the reported tail changes, publishing the value before the callback.
   With the editor enabled (0.9.0), `gui.create` also returns false if the host
   supplies no `clap.gui` callbacks, instead of panicking on an Option unwrap.
+  In 0.13.0, activation publishes `is_activated` only after dropping the deferred
+  activation context. Latency is therefore announced while still inactive,
+  preventing an extra restart on initial activation or an FFT-size change.
+  Runtime latency changes made while already active retain the existing restart
+  path. `scripts/probe-clap-fft.py` exercises actual parameter flushes and confirms
+  exactly one restart per requested size, with none added by reactivation.
 
 Spectral Resonator opts out because its activation/DSP never varies by process
 mode. Sample-rate, buffer-size and channel-layout reactivation is unaffected.

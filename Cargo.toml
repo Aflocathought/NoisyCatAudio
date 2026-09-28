@@ -4,12 +4,14 @@ members = [
     "crates/spectral-resonator-plugin",
 ]
 resolver = "3"
-exclude = ["vendor/nice-plug", "vendor/nice-plug-egui"]
+exclude = ["vendor/nice-plug", "vendor/nice-plug-egui", "vendor/baseview", "vendor/egui-baseview"]
 
 [patch.crates-io]
 # Mode-independent DSP does not need a host restart during CLAP render.set().
 nice-plug = { path = "vendor/nice-plug" }
 nice-plug-egui = { path = "vendor/nice-plug-egui" }
+baseview = { path = "vendor/baseview" }
+egui-baseview = { path = "vendor/egui-baseview" }
 
 [workspace.package]
 edition = "2024"
