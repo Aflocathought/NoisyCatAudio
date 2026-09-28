@@ -11,6 +11,7 @@ from ctypes import wintypes as w
 import importlib.util
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -36,7 +37,11 @@ class HostGui(c.Structure):
     _fields_ = [(name, c.c_void_p) for name in ("hints", "resize", "show", "hide", "closed")]
 
 
-def run(path, seconds):
+class OutputEvents(c.Structure):
+    _fields_ = [("ctx", c.c_void_p), ("try_push", c.c_void_p)]
+
+
+def run(path, seconds, fps=60, cycles=3, keyboard=False):
     faulthandler.dump_traceback_later(seconds + 25, repeat=False)
     headless = bounce.Probe(path, "internal", "post")
     try:
@@ -57,6 +62,12 @@ def run(path, seconds):
     user.TranslateMessage.argtypes = [c.POINTER(w.MSG)]
     user.DispatchMessageW.argtypes = [c.POINTER(w.MSG)]
     user.DispatchMessageW.restype = w.LPARAM
+    user.MsgWaitForMultipleObjectsEx.argtypes = [w.DWORD, c.c_void_p, w.DWORD, w.DWORD, w.DWORD]
+    user.MsgWaitForMultipleObjectsEx.restype = w.DWORD
+    user.GetWindow.argtypes = [w.HWND, w.UINT]
+    user.GetWindow.restype = w.HWND
+    user.PostMessageW.argtypes = [w.HWND, w.UINT, w.WPARAM, w.LPARAM]
+    user.PostMessageW.restype = w.BOOL
     # This is an application test window, not automation of a user's DAW.
     parent = user.CreateWindowExW(0, "STATIC", "Spectral Resonator / CLAP UI test", 0x00CF0000 | 0x02000000, 100, 100, 1140, 840, None, None, None, None)
     assert parent, c.get_last_error()
@@ -70,6 +81,7 @@ def run(path, seconds):
     host_gui = HostGui(*[c.cast(cb, c.c_void_p) for cb in gui_callbacks])
     probe = bounce.Probe(path, "internal", "post", host_extensions={b"clap.gui": host_gui})
     saved = probe.snapshot()
+    saved["fields"].update({"ui_max_fps": json.dumps(fps), "ui_debug_fps": "true"})
     saved["params"].update({"root_note": {"i32": 57}, "mod_mode": {"string": "chorus"}, "decay_t60": {"f32": 2.0}, "unison_voices": {"i32": 4}})
     probe.load(saved)
     gui = probe.extension(b"clap.gui", Gui)
@@ -83,7 +95,13 @@ def run(path, seconds):
         left, right = (c.c_float * 256)(), (c.c_float * 256)()
         ptrs = (c.POINTER(c.c_float) * 2)(left, right)
         buf = abi.Audio(ptrs, None, 2, 0, 0)
-        process = abi.Process(0, 256, None, c.pointer(buf), c.pointer(buf), 1, 1, None, None)
+        # A real host accepts GUI parameter output events. nice-plug applies
+        # queued changes only when writing this queue, at an audio boundary.
+        @c.CFUNCTYPE(c.c_bool, c.c_void_p, c.c_void_p)
+        def push_event(_queue, _event):
+            return True
+        output_events = OutputEvents(None, c.cast(push_event, c.c_void_p))
+        process = abi.Process(0, 256, None, c.pointer(buf), c.pointer(buf), 1, 1, None, c.addressof(output_events))
         blocks = 0
         peak = 0.0
         seed = 42
@@ -107,7 +125,7 @@ def run(path, seconds):
     future = probe.worker.submit(audio)
     opened = False
     try:
-        for cycle in range(3):
+        for cycle in range(cycles):
             assert call(gui.create, c.c_bool, [c.c_void_p, c.c_char_p, c.c_bool], probe.ptr, b"win32", False)
             opened = True
             window = Window(b"win32", parent)
@@ -125,20 +143,80 @@ def run(path, seconds):
             assert call(gui.show, c.c_bool, [c.c_void_p], probe.ptr)
             bounce.log("gui.open", cycle=cycle, width=width.value, height=height.value)
             deadline = time.monotonic() + (seconds if cycle == 0 else 2.0)
+            keyboard_start = time.monotonic()
+            keyboard_stage = 0
+            passed_space = []
+            child = user.GetWindow(parent, 5)  # GW_CHILD: our test plugin only.
+            assert child
+
+            def post_key(vk, scan, character=None, repeat=False):
+                flags = 1 | (scan << 16) | ((1 << 30) if repeat else 0)
+                assert user.PostMessageW(child, 0x100, vk, flags)
+                if character is not None:
+                    assert user.PostMessageW(child, 0x102, ord(character), flags)
+                assert user.PostMessageW(child, 0x101, vk, flags | 0xC0000000)
+
             message = w.MSG()
             while time.monotonic() < deadline:
+                if keyboard and cycle == 0:
+                    elapsed = time.monotonic() - keyboard_start
+                    if keyboard_stage == 0 and elapsed >= 0.3:
+                        post_key(0x20, 0x39, " ")
+                        post_key(0x20, 0x39, " ", repeat=True)
+                        keyboard_stage = 1
+                    elif keyboard_stage == 1 and elapsed >= 0.7:
+                        assert len(passed_space) == 6, passed_space
+                        # Low / Mid's numeric field in the known 1120x780 test
+                        # layout. This targets only our child HWND, not a DAW.
+                        assert (width.value, height.value) == (1120, 780)
+                        # 0.14.0 adds mute buttons below the outer controls;
+                        # this is the value row in the verified GPU fixture.
+                        point = 100 | (423 << 16)
+                        for msg, flags in [(0x200, 0), (0x201, 1), (0x202, 0)]:
+                            assert user.PostMessageW(child, msg, flags, point)
+                        keyboard_stage = 2
+                    elif keyboard_stage == 2 and elapsed >= 1.1:
+                        post_key(36, 0x47)  # Home: do not rely on initial caret position.
+                        for _ in range(3):
+                            post_key(46, 0x53)  # Delete the three digits of 250.
+                        keyboard_stage = 3
+                    elif keyboard_stage == 3 and elapsed >= 1.35:
+                        post_key(0x20, 0x39, " ")
+                        for char, scan in [("3", 0x04), ("0", 0x0B), ("0", 0x0B)]:
+                            post_key(ord(char), scan, char)
+                        keyboard_stage = 4
+                    elif keyboard_stage == 4 and elapsed >= 1.65:
+                        post_key(13, 0x1C, "\r")
+                        keyboard_stage = 5
+                    elif keyboard_stage == 5 and elapsed >= 2.0:
+                        assert len(passed_space) == 6, "Space leaked from text editing"
+                        value = probe.snapshot()["params"]["low_mid_hz"]["f32"]
+                        assert abs(value - 300) < 0.01, f"Numeric typing failed: {value}"
+                        post_key(0x20, 0x39, " ")
+                        keyboard_stage = 6
                 # Redraw timers can keep the native message queue nonempty.
                 # Bound each pump so host callbacks and the deadline still run.
                 for _ in range(64):
                     if not user.PeekMessageW(c.byref(message), None, 0, 0, 1):
                         break
+                    if keyboard and cycle == 0 and message.hWnd == child and message.wParam == 0x20 and message.message in (0x100, 0x101, 0x102):
+                        passed_space.append((message.message, message.lParam))
+                        # A host transport accelerator consumes the original
+                        # event here, before TranslateMessage/DispatchMessage.
+                        continue
                     user.TranslateMessage(c.byref(message))
                     user.DispatchMessageW(c.byref(message))
                 probe.pump()
                 if future.done():
                     future.result()
                     raise AssertionError("Audio stopped unexpectedly")
-                time.sleep(0.005)
+                # Wake for queued frame messages; a 5 ms host sleep would
+                # quantize the benchmark itself at the 90/120 FPS settings.
+                user.MsgWaitForMultipleObjectsEx(0, None, 10, 0x04FF, 0x0004)
+            if keyboard and cycle == 0:
+                assert keyboard_stage == 6 and len(passed_space) == 9, passed_space
+                bounce.log("gui.keyboard.pass", host_space_messages=len(passed_space), numeric_value=300,
+                           cases=["down-char-up", "autorepeat", "text-capture", "return-to-host"])
             assert call(gui.hide, c.c_bool, [c.c_void_p], probe.ptr)
             assert call(gui.show, c.c_bool, [c.c_void_p], probe.ptr)
             assert call(gui.hide, c.c_bool, [c.c_void_p], probe.ptr)
@@ -154,7 +232,7 @@ def run(path, seconds):
         bounce.log("audio.end", **future.result(timeout=10))
         probe.close()
         user.DestroyWindow(parent)
-    bounce.log("gui.pass", cycles=3)
+    bounce.log("gui.pass", cycles=cycles, fps_limit=fps)
     faulthandler.cancel_dump_traceback_later()
 
 
@@ -163,9 +241,21 @@ if __name__ == "__main__":
     parser.add_argument("plugin", type=Path)
     parser.add_argument("--seconds", type=float, default=10)
     parser.add_argument("--child", action="store_true")
+    parser.add_argument("--fps", type=int, choices=[30, 60, 90, 120], default=60)
+    parser.add_argument("--cycles", type=int, choices=[1, 3], default=3)
+    parser.add_argument("--profile", type=Path)
+    parser.add_argument("--keyboard", action="store_true", help="Test Space routing and numeric input in this host's own window")
     args = parser.parse_args()
+    if args.keyboard and args.seconds < 3:
+        parser.error("--keyboard needs --seconds >= 3")
+    if args.profile:
+        args.profile.parent.mkdir(parents=True, exist_ok=True)
+        os.environ["SPECTRAL_UI_PROFILE"] = str(args.profile.resolve())
     if args.child:
-        run(args.plugin.resolve(), args.seconds)
+        run(args.plugin.resolve(), args.seconds, args.fps, args.cycles, args.keyboard)
     else:
-        result = subprocess.run([sys.executable, __file__, str(args.plugin.resolve()), "--seconds", str(args.seconds), "--child"], timeout=args.seconds + 40)
+        command = [sys.executable, __file__, str(args.plugin.resolve()), "--seconds", str(args.seconds), "--fps", str(args.fps), "--cycles", str(args.cycles), "--child"]
+        if args.keyboard:
+            command.append("--keyboard")
+        result = subprocess.run(command, timeout=args.seconds + 40)
         raise SystemExit(result.returncode)

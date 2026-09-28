@@ -68,7 +68,9 @@ def log(phase, **details):
 
 
 class Probe:
-    def __init__(self, path, source, mode, require_tail_drain=False, output_dir=None, host_extensions=None):
+    def __init__(self, path, source, mode, require_tail_drain=False, output_dir=None, host_extensions=None,
+                 attack_ms=None, decay_seconds=0.05, decay_model="damping", wet_alignment=None,
+                 reshape=False, fft_size=None):
         self.library = c.CDLL(str(path))
         self.entry = abi.Entry.in_dll(self.library, "clap_entry")
         assert call(self.entry.init, c.c_bool, [c.c_char_p], str(path).encode())
@@ -84,6 +86,7 @@ class Probe:
         self.notified_tail_samples = 0
         self.require_tail_drain = require_tail_drain
         self.output_dir = output_dir
+        self.fft_size = fft_size
         self.extensions = {}
 
         def callback(result, args, fn):
@@ -145,9 +148,23 @@ class Probe:
             "pitch_source": {"string": source}, "unison_mode": {"string": mode},
             "harmonics": {"i32": 256}, "unison_voices": {"i32": 8},
             "mod_mode": {"string": "granular"}, "root_note": {"i32": 33},
-            "decay_t60": {"f32": 0.05},
-            **{f"decay_point_seconds_{i}": {"f32": 0.05} for i in range(1, 7)}
+            "decay_t60": {"f32": decay_seconds}, "decay_mode": {"string": decay_model},
+            **({"fft_size": {"string": str(fft_size)}} if fft_size is not None else {}),
+            **({"attack_mode": {"string": "reshape" if reshape else "independent"}, "attack_ms": {"f32": attack_ms}}
+               if attack_ms is not None else {}),
+            **({"align_wet": {"f32": wet_alignment}} if wet_alignment is not None else {}),
+            **{f"decay_point_seconds_{i}": {"f32": decay_seconds} for i in range(1, 7)}
         }, "fields": {}})
+        # Check actual deserialization, not only the test's intended settings.
+        if fft_size is not None:
+            assert self.snapshot()["params"]["fft_size"]["string"] == str(fft_size)
+        if wet_alignment is not None:
+            assert abs(self.snapshot()["params"]["align_wet"]["f32"] - wet_alignment) < 1e-6
+        if attack_ms is not None:
+            saved_params = self.snapshot()["params"]
+            assert saved_params["attack_mode"]["string"] == ("reshape" if reshape else "independent")
+            assert abs(saved_params["attack_ms"]["f32"] - attack_ms) < 1e-4
+            assert abs(saved_params["decay_t60"]["f32"] - decay_seconds) < 1e-5
 
     def set_audio_id(self):
         self.audio_id = threading.get_ident()
@@ -215,6 +232,8 @@ class Probe:
                     self.ptr, self.rate, 1, self.block)
         self.active = True
         self.pump()
+        if self.fft_size is not None:
+            assert call(self.latency.get, c.c_uint32, [c.c_void_p], self.ptr) == self.fft_size
         log("activate.end", latency=call(self.latency.get, c.c_uint32, [c.c_void_p], self.ptr),
             restart=self.restart_pending.is_set())
 
@@ -390,10 +409,26 @@ def main():
     parser.add_argument("--require-tail-drain", action="store_true")
     parser.add_argument("--source", choices=["internal", "midi"], default="internal")
     parser.add_argument("--mode", choices=["spectral", "post"], default="spectral")
+    parser.add_argument("--attack-ms", type=float, help="Enable Independent attack (0..2000 ms)")
+    parser.add_argument("--decay-seconds", type=float, default=0.05)
+    parser.add_argument("--decay-model", choices=["damping", "curve"], default="damping")
+    parser.add_argument("--wet-alignment", type=float, help="Wet delay in windows (0..1)")
+    parser.add_argument("--reshape", action="store_true", help="Use wet transient shaping with --attack-ms")
+    parser.add_argument("--fft-size", type=int, choices=[1024, 2048, 3072, 4096])
     args = parser.parse_args()
+    if args.attack_ms is not None and not 0 <= args.attack_ms <= 2000:
+        parser.error("--attack-ms must be 0..2000")
+    if args.reshape and args.attack_ms is None:
+        parser.error("--reshape requires --attack-ms")
+    if not 0.005 <= args.decay_seconds <= 12:
+        parser.error("--decay-seconds must be 0.005..12")
+    if args.wet_alignment is not None and not 0 <= args.wet_alignment <= 1:
+        parser.error("--wet-alignment must be 0..1")
     if args.child:
         probe = Probe(args.plugin.resolve(strict=True), args.source, args.mode,
-                      args.require_tail_drain, args.output)
+                      args.require_tail_drain, args.output, attack_ms=args.attack_ms,
+                      decay_seconds=args.decay_seconds, decay_model=args.decay_model,
+                      wet_alignment=args.wet_alignment, reshape=args.reshape, fft_size=args.fft_size)
         try:
             probe.run()
         finally:
@@ -406,7 +441,16 @@ def main():
             path = args.output / f"{source}-{mode}.jsonl"
             command = [sys.executable, __file__, str(args.plugin.resolve(strict=True)),
                        "--child", "--source", source, "--mode", mode,
-                       "--output", str(args.output)]
+                       "--output", str(args.output), "--decay-seconds", str(args.decay_seconds),
+                       "--decay-model", args.decay_model]
+            if args.fft_size is not None:
+                command.extend(["--fft-size", str(args.fft_size)])
+            if args.attack_ms is not None:
+                command.extend(["--attack-ms", str(args.attack_ms)])
+            if args.wet_alignment is not None:
+                command.extend(["--wet-alignment", str(args.wet_alignment)])
+            if args.reshape:
+                command.append("--reshape")
             if args.require_tail_drain:
                 command.append("--require-tail-drain")
             with path.open("w", encoding="utf-8") as output:
