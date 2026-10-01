@@ -130,6 +130,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21e4227379beff4205943696e6c3e0cd809bacdf3f0edd6e3dd153e2269571a4"
 
 [[package]]
+name = "audio-plugin-settings"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2200,8 +2207,9 @@ dependencies = [
 
 [[package]]
 name = "spectral-resonator-plugin"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
+ "audio-plugin-settings",
  "crossbeam-queue",
  "egui",
  "egui-wgpu",

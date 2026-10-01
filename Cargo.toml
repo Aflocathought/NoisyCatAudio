@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/audio-plugin-settings",
     "crates/spectral-dsp",
     "crates/spectral-resonator-plugin",
 ]

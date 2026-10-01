@@ -1,9 +1,6 @@
 use nice_plug::prelude::*;
 use spectral_dsp::{DECAY_POINTS, DEFAULT_DECAY_HZ, DEFAULT_PARTIALS, MAX_PARTIALS, MAX_UNISON};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU32},
-};
+use std::sync::atomic::AtomicBool;
 
 #[derive(Enum, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
@@ -131,10 +128,12 @@ pub struct SpectralResonatorParams {
     #[id = "fft_size"]
     pub fft_size: EnumParam<crate::fft::FftSize>,
     // Editor preferences are preset fields, never automatable audio controls.
-    #[persist = "ui_max_fps"]
-    pub ui_max_fps: Arc<AtomicU32>,
     #[persist = "ui_debug_fps"]
     pub ui_debug_fps: AtomicBool,
+    #[persist = "ui_show_dry"]
+    pub ui_show_dry: AtomicBool,
+    #[persist = "ui_show_wet"]
+    pub ui_show_wet: AtomicBool,
     #[id = "max_polyphony"]
     pub max_polyphony: IntParam,
     #[id = "output_mode"]
@@ -224,8 +223,9 @@ impl Default for SpectralResonatorParams {
     fn default() -> Self {
         Self {
             fft_size: EnumParam::new("FFT Size", crate::fft::FftSize::N4096).non_automatable(),
-            ui_max_fps: Arc::new(AtomicU32::new(60)),
             ui_debug_fps: AtomicBool::new(false),
+            ui_show_dry: AtomicBool::new(true),
+            ui_show_wet: AtomicBool::new(true),
             max_polyphony: IntParam::new(
                 "Maximum Polyphony",
                 16,

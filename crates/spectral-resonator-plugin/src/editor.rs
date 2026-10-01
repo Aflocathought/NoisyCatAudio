@@ -1,5 +1,6 @@
 //! Hosted egui/wgpu editor. Only newly analysed rows are uploaded to a GPU
 //! texture; two UV rectangles scroll the circular history without copying it.
+//! Visibility changes recolor the retained history once, including frozen rows.
 use crate::{
     analyzer::{self, Analyzer, BINS, HISTORY, SharedAnalysis},
     params::{DecayMode, PitchSource, SpectralResonatorParams},
@@ -63,12 +64,18 @@ pub struct ResonatorEditor {
     gui: Option<GuiContext>,
     analyzer: Analyzer,
     texture: Option<egui::TextureHandle>,
+    // Store each layer's mapped brightness on the UI thread. Toggling a layer
+    // restores all history without rerunning FFTs or logarithms, even in Freeze.
+    spectrum_history: Vec<[f32; 2]>,
+    history_gaps: [bool; TEXTURE_ROWS],
+    visible_layers: [bool; 2],
     head: usize,
     rows: usize,
     freeze: bool,
     tab: usize,
     gestures: [bool; 2],
     controls: Controls,
+    preferences: crate::preferences::EditorPreferences,
     settings_open: bool,
     stats: diagnostics::FrameStats,
     last_frame: Option<u64>,
@@ -81,6 +88,8 @@ pub struct ResonatorEditor {
     plot_rect: Rect,
     #[cfg(test)]
     curve_rect: Rect,
+    #[cfg(test)]
+    layer_rects: [Rect; 2],
 }
 
 impl ResonatorEditor {
@@ -99,12 +108,16 @@ impl ResonatorEditor {
             gui: None,
             analyzer: Analyzer::new(),
             texture: None,
+            spectrum_history: vec![[0.0; 2]; BINS * TEXTURE_ROWS],
+            history_gaps: [false; TEXTURE_ROWS],
+            visible_layers: [true; 2],
             head: 0,
             rows: 0,
             freeze: false,
             tab: 0,
             gestures: [false; 2],
             controls: Controls::default(),
+            preferences: Default::default(),
             settings_open: false,
             stats: Default::default(),
             last_frame: None,
@@ -117,11 +130,14 @@ impl ResonatorEditor {
             plot_rect: Rect::NOTHING,
             #[cfg(test)]
             curve_rect: Rect::NOTHING,
+            #[cfg(test)]
+            layer_rects: [Rect::NOTHING; 2],
         }
     }
 
     fn draw(&mut self, ui: &mut egui::Ui, gui: &GuiContext) {
         let start = Instant::now();
+        self.preferences.poll();
         self.controls.begin_frame();
         let frame = ui.ctx().cumulative_frame_nr();
         let new_frame = self.last_frame != Some(frame);
@@ -137,6 +153,7 @@ impl ResonatorEditor {
                 self.draw_contents(ui, gui);
             });
         self.settings(ui.ctx(), gui);
+        self.preferences.repository_confirmation(ui.ctx());
         self.controls.finish_frame(gui);
         if new_frame {
             self.stats
@@ -163,8 +180,18 @@ impl ResonatorEditor {
                     self.settings_open = !self.settings_open;
                 }
                 ui.toggle_value(&mut self.freeze, "Freeze");
-                ui.colored_label(WHITE, "WET");
-                ui.colored_label(BLUE, "DRY");
+                for (index, label, color, visible) in [
+                    (1, "WET", WHITE, &self.params.ui_show_wet),
+                    (0, "DRY", BLUE, &self.params.ui_show_dry),
+                ] {
+                    let response = spectrum_layer_toggle(ui, label, color, visible);
+                    #[cfg(test)]
+                    {
+                        self.layer_rects[index] = response.rect;
+                    }
+                    #[cfg(not(test))]
+                    let _ = (index, response);
+                }
             });
         });
         self.shared.enabled.store(!self.freeze, Ordering::Relaxed);
@@ -370,10 +397,7 @@ impl ResonatorEditor {
     }
 
     fn fps_limit(&self) -> u32 {
-        match self.params.ui_max_fps.load(Ordering::Relaxed) {
-            value @ (30 | 60 | 90 | 120) => value,
-            _ => 60,
-        }
+        self.preferences.snapshot.maximum_ui_fps
     }
 
     fn settings(&mut self, ctx: &egui::Context, gui: &GuiContext) {
@@ -382,6 +406,9 @@ impl ResonatorEditor {
             .open(&mut open)
             .resizable(false)
             .collapsible(false)
+            .default_width(430.0)
+            .max_height(560.0)
+            .vscroll(true)
             .show(ctx, |ui| {
                 ui.label("FFT size");
                 let mut selected = self.params.fft_size.value();
@@ -430,19 +457,12 @@ impl ResonatorEditor {
                 ui.small("Changing FFT size restarts the resonant tail. Saved with the project.");
                 ui.small("Base latency shown; Wet Alignment and Post Unison may add delay.");
                 ui.separator();
-                ui.label("Maximum UI frame rate");
-                let mut fps = self.fps_limit();
-                ui.horizontal(|ui| {
-                    for cap in [30, 60, 90, 120] {
-                        ui.selectable_value(&mut fps, cap, format!("{cap} FPS"));
-                    }
-                });
-                self.params.ui_max_fps.store(fps, Ordering::Relaxed);
                 let mut debug = self.params.ui_debug_fps.load(Ordering::Relaxed);
                 ui.checkbox(&mut debug, "Show measured FPS on the spectrum");
                 self.params.ui_debug_fps.store(debug, Ordering::Relaxed);
-                ui.small("The frame limit applies immediately and is saved with the project.");
-                ui.small("Actual frame rate depends on the host, GPU and display.");
+                ui.small("This overlay is saved with the project.");
+                ui.separator();
+                self.preferences.ui(ui);
             });
         self.settings_open = open;
         // A paused host can flush parameters without calling process(). Poll
@@ -467,6 +487,25 @@ impl ResonatorEditor {
             ));
         }
         let texture = self.texture.as_mut().unwrap();
+        let visible = [
+            self.params.ui_show_dry.load(Ordering::Relaxed),
+            self.params.ui_show_wet.load(Ordering::Relaxed),
+        ];
+        if visible != self.visible_layers {
+            // Normal frames still upload only new rows. A visibility change
+            // recolors the single texture once, including its live bottom edge.
+            let pixels = self
+                .spectrum_history
+                .iter()
+                .enumerate()
+                .map(|(i, &light)| spectral_color(light, self.history_gaps[i / BINS], visible))
+                .collect();
+            texture.set(
+                egui::ColorImage::new([BINS, TEXTURE_ROWS], pixels),
+                egui::TextureOptions::LINEAR,
+            );
+            self.visible_layers = visible;
+        }
         // Bound work even when the host bounces much faster than real time.
         for _ in 0..32 {
             let Some(packet) = self.shared.queue.pop() else {
@@ -477,14 +516,17 @@ impl ResonatorEditor {
             }
             self.last_audio_time = now;
             self.analyzer.ingest(packet, |spectrum, gap| {
-                let pixels = (0..BINS)
-                    .map(|i| {
-                        if gap {
-                            Color32::from_rgb(29, 36, 48)
-                        } else {
-                            spectral_color(spectrum[0][i], spectrum[1][i])
-                        }
-                    })
+                let row = &mut self.spectrum_history[self.head * BINS..(self.head + 1) * BINS];
+                for (i, light) in row.iter_mut().enumerate() {
+                    *light = [
+                        spectral_light(spectrum[0][i]),
+                        spectral_light(spectrum[1][i]),
+                    ];
+                }
+                self.history_gaps[self.head] = gap;
+                let pixels = row
+                    .iter()
+                    .map(|&light| spectral_color(light, gap, visible))
                     .collect();
                 texture.set_partial(
                     [0, self.head],
@@ -727,14 +769,71 @@ impl ResonatorEditor {
     }
 }
 
-fn spectral_color(dry: f32, wet: f32) -> Color32 {
-    fn light(power: f32) -> f32 {
-        ((10.0 * power.max(1e-12).log10() + 84.0) / 84.0)
-            .clamp(0.0, 1.0)
-            .powf(1.5)
+fn spectrum_layer_toggle(
+    ui: &mut egui::Ui,
+    label: &str,
+    color: Color32,
+    visible: &std::sync::atomic::AtomicBool,
+) -> egui::Response {
+    let mut shown = visible.load(Ordering::Relaxed);
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let text = ui.painter().layout_no_wrap(label.into(), font, color);
+    let (rect, mut response) = ui.allocate_exact_size(
+        Vec2::new(20.0 + text.size().x, text.size().y.max(24.0)),
+        Sense::click(),
+    );
+    if response.clicked() {
+        shown = !shown;
+        visible.store(shown, Ordering::Relaxed);
+        response.mark_changed();
     }
-    let d = light(dry);
-    let w = light(wet);
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), shown, label)
+    });
+    let square = Rect::from_center_size(
+        Pos2::new(rect.left() + 6.0, rect.center().y),
+        Vec2::splat(12.0),
+    );
+    let ink = if shown {
+        color
+    } else {
+        color.gamma_multiply(0.45)
+    };
+    ui.painter()
+        .rect_filled(square, 1.0, if shown { color } else { INK });
+    ui.painter().rect_stroke(
+        square,
+        1.0,
+        Stroke::new(if response.hovered() { 1.5 } else { 1.0 }, ink),
+        egui::StrokeKind::Inside,
+    );
+    // Explicit coordinates keep the square to the LEFT in the header's RTL row.
+    ui.painter().galley_with_override_text_color(
+        Pos2::new(rect.left() + 20.0, rect.center().y - text.size().y * 0.5),
+        text,
+        ink,
+    );
+    response.on_hover_text(format!(
+        "{} {label} spectrum (display only)",
+        if shown { "Hide" } else { "Show" }
+    ))
+}
+
+fn spectral_light(power: f32) -> f32 {
+    ((10.0 * power.max(1e-12).log10() + 84.0) / 84.0)
+        .clamp(0.0, 1.0)
+        .powf(1.5)
+}
+
+fn spectral_color(light: [f32; 2], gap: bool, visible: [bool; 2]) -> Color32 {
+    if !visible[0] && !visible[1] {
+        return INK;
+    }
+    if gap {
+        return Color32::from_rgb(29, 36, 48);
+    }
+    let d = if visible[0] { light[0] } else { 0.0 };
+    let w = if visible[1] { light[1] } else { 0.0 };
     let base = [8.0 + 27.0 * d, 15.0 + 108.0 * d, 26.0 + 229.0 * d];
     Color32::from_rgb(
         (base[0] + (245.0 - base[0]) * w) as u8,
@@ -780,6 +879,7 @@ impl NiceEguiApp for ResonatorEditor {
         frame: &mut Frame,
     ) -> Result<(), nice_plug_egui::baseview::HandlerError> {
         setup_style(&ctx);
+        self.preferences.connect();
         frame.set_key_capture(self.key_capture());
         frame.set_max_fps(self.fps_limit());
         self.stats = Default::default();
@@ -787,6 +887,8 @@ impl NiceEguiApp for ResonatorEditor {
         self.gui = Some(gui);
         self.analyzer.clear();
         self.texture = None;
+        self.spectrum_history.fill([0.0; 2]);
+        self.history_gaps.fill(false);
         self.head = 0;
         self.rows = 0;
         while self.shared.queue.pop().is_some() {}
@@ -824,6 +926,7 @@ impl NiceEguiApp for ResonatorEditor {
         self.gestures = [false; 2];
         self.gui = None;
         self.texture = None;
+        self.preferences.disconnect();
     }
 }
 

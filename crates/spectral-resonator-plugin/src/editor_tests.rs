@@ -234,6 +234,28 @@ fn crossover_drag_sends_a_balanced_host_gesture_and_layout_fits() {
         cutoffs,
         (params.low_mid_hz.value(), params.mid_high_hz.value())
     );
+    // Legend squares are display preferences, not audio parameter gestures.
+    // Exercise actual clicks while frozen, and make both layers visible again.
+    editor.freeze = true;
+    for target in [false, true] {
+        for (index, visible) in [&params.ui_show_dry, &params.ui_show_wet]
+            .into_iter()
+            .enumerate()
+        {
+            let pos = editor.layer_rects[index].left_center() + Vec2::new(6.0, 0.0);
+            host.events.lock().unwrap().clear();
+            ui_frame(
+                &ctx,
+                &mut editor,
+                &gui,
+                vec![egui::Event::PointerMoved(pos), mouse(pos, true)],
+            );
+            ui_frame(&ctx, &mut editor, &gui, vec![mouse(pos, false)]);
+            assert_eq!(visible.load(Ordering::Relaxed), target);
+            assert_eq!(editor.visible_layers[index], target);
+            assert!(host.events.lock().unwrap().is_empty());
+        }
+    }
 }
 
 fn ui_frame(
@@ -383,13 +405,18 @@ fn hidden_controls_keep_values_curve_drag_balances_gestures_and_settings_persist
     ui_frame(&ctx, &mut editor, &gui, vec![]);
     assert_eq!((point.hz.value(), point.seconds.value()), saved_point);
     assert_eq!(params.lf_damp.value(), 0.32789);
-    params.ui_max_fps.store(120, Ordering::Relaxed);
+    editor.preferences.set_fps(120);
     params.ui_debug_fps.store(true, Ordering::Relaxed);
+    params.ui_show_dry.store(false, Ordering::Relaxed);
+    params.ui_show_wet.store(false, Ordering::Relaxed);
     let fields = params.serialize_fields();
     let loaded = SpectralResonatorParams::default();
     loaded.deserialize_fields(&fields);
-    assert_eq!(loaded.ui_max_fps.load(Ordering::Relaxed), 120);
+    assert!(!fields.contains_key("ui_max_fps"));
+    assert_eq!(editor.fps_limit(), 120);
     assert!(loaded.ui_debug_fps.load(Ordering::Relaxed));
+    assert!(!loaded.ui_show_dry.load(Ordering::Relaxed));
+    assert!(!loaded.ui_show_wet.load(Ordering::Relaxed));
 }
 
 #[test]
@@ -616,6 +643,11 @@ fn render_gpu_preview() {
         ("settings", 0, 1120, 780),
         ("guide-min", 0, 980, 700),
         ("guide-max", 3, 980, 700),
+        ("layers-both", 0, 980, 700),
+        ("layers-dry", 0, 980, 700),
+        ("layers-wet", 0, 980, 700),
+        ("layers-hidden", 0, 980, 700),
+        ("layers-restored", 0, 980, 700),
         ("edge-start", 0, 980, 700),
         ("edge-half", 0, 980, 700),
         ("edge-wrap", 0, 980, 700),
@@ -659,6 +691,17 @@ fn render_gpu_preview() {
                 ._internal_set_normalized_value(if name == "reshape" { 0.0 } else { 0.5 });
         }
         editor.settings_open = name == "settings";
+        if name.starts_with("layers-") {
+            editor.freeze = true;
+        }
+        editor.params.ui_show_dry.store(
+            !matches!(name, "layers-wet" | "layers-hidden"),
+            Ordering::Relaxed,
+        );
+        editor.params.ui_show_wet.store(
+            !matches!(name, "layers-dry" | "layers-hidden"),
+            Ordering::Relaxed,
+        );
         editor
             .params
             .ui_debug_fps

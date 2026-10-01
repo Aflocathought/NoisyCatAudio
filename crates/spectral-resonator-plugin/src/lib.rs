@@ -16,6 +16,7 @@ mod editor;
 mod fft;
 mod midi;
 mod params;
+mod preferences;
 mod state;
 
 #[cfg(test)]

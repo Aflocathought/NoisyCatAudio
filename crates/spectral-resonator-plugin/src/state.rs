@@ -2,14 +2,16 @@ use nice_plug::plugin::ParamValue;
 use nice_plug::prelude::*;
 
 pub fn migrate(state: &mut PluginState) {
-    state
-        .fields
-        .entry("ui_max_fps".into())
-        .or_insert("60".into());
+    // FPS is now a per-user preference. Opening an old project must never
+    // replace the shared setting used by other instances or plugins.
+    state.fields.remove("ui_max_fps");
     state
         .fields
         .entry("ui_debug_fps".into())
         .or_insert("false".into());
+    for field in ["ui_show_dry", "ui_show_wet"] {
+        state.fields.entry(field.into()).or_insert("true".into());
+    }
     // Old presets contain only the six original controls. Explicit defaults
     // matter when loading into an instance that was previously in MIDI mode:
     // nice-plug leaves parameters absent from the serialized map untouched.
@@ -153,8 +155,10 @@ mod tests {
             ParamValue::F32(6.0)
         ));
         assert!(matches!(state.params["align_wet"], ParamValue::F32(0.5)));
-        assert_eq!(state.fields["ui_max_fps"], "60");
+        assert!(!state.fields.contains_key("ui_max_fps"));
         assert_eq!(state.fields["ui_debug_fps"], "false");
+        assert_eq!(state.fields["ui_show_dry"], "true");
+        assert_eq!(state.fields["ui_show_wet"], "true");
         assert!(matches!(&state.params["mod_mode"], ParamValue::String(mode) if mode == "off"));
         assert!(
             matches!(&state.params["decay_mode"], ParamValue::String(mode) if mode == "damping")
@@ -200,6 +204,8 @@ mod tests {
             .insert("max_polyphony".into(), ParamValue::I32(5));
         state.fields.insert("ui_max_fps".into(), "90".into());
         state.fields.insert("ui_debug_fps".into(), "true".into());
+        state.fields.insert("ui_show_dry".into(), "false".into());
+        state.fields.insert("ui_show_wet".into(), "false".into());
         state
             .params
             .insert("voice_spread".into(), ParamValue::F32(65.0));
@@ -217,8 +223,10 @@ mod tests {
         );
         assert!(matches!(state.params["attack_ms"], ParamValue::F32(0.0)));
         assert!(matches!(state.params["max_polyphony"], ParamValue::I32(5)));
-        assert_eq!(state.fields["ui_max_fps"], "90");
+        assert!(!state.fields.contains_key("ui_max_fps"));
         assert_eq!(state.fields["ui_debug_fps"], "true");
+        assert_eq!(state.fields["ui_show_dry"], "false");
+        assert_eq!(state.fields["ui_show_wet"], "false");
         assert!(matches!(
             state.params["voice_spread"],
             ParamValue::F32(65.0)

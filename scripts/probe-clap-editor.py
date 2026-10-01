@@ -16,6 +16,7 @@ from pathlib import Path
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 
 sys.dont_write_bytecode = True
@@ -69,7 +70,7 @@ def run(path, seconds, fps=60, cycles=3, keyboard=False):
     user.PostMessageW.argtypes = [w.HWND, w.UINT, w.WPARAM, w.LPARAM]
     user.PostMessageW.restype = w.BOOL
     # This is an application test window, not automation of a user's DAW.
-    parent = user.CreateWindowExW(0, "STATIC", "Spectral Resonator / CLAP UI test", 0x00CF0000 | 0x02000000, 100, 100, 1140, 840, None, None, None, None)
+    parent = user.CreateWindowExW(0, "STATIC", "Specatral Resonator / CLAP UI test", 0x00CF0000 | 0x02000000, 100, 100, 1140, 840, None, None, None, None)
     assert parent, c.get_last_error()
     gui_callbacks = [
         c.CFUNCTYPE(None, c.c_void_p)(lambda _: None),
@@ -81,7 +82,9 @@ def run(path, seconds, fps=60, cycles=3, keyboard=False):
     host_gui = HostGui(*[c.cast(cb, c.c_void_p) for cb in gui_callbacks])
     probe = bounce.Probe(path, "internal", "post", host_extensions={b"clap.gui": host_gui})
     saved = probe.snapshot()
-    saved["fields"].update({"ui_max_fps": json.dumps(fps), "ui_debug_fps": "true"})
+    # Old per-project FPS is deliberately ignored by current plugins. The
+    # isolated per-user settings below are authoritative for this test host.
+    saved["fields"].update({"ui_max_fps": json.dumps(30 if fps != 30 else 120), "ui_debug_fps": "true"})
     saved["params"].update({"root_note": {"i32": 57}, "mod_mode": {"string": "chorus"}, "decay_t60": {"f32": 2.0}, "unison_voices": {"i32": 4}})
     probe.load(saved)
     gui = probe.extension(b"clap.gui", Gui)
@@ -252,7 +255,13 @@ if __name__ == "__main__":
         args.profile.parent.mkdir(parents=True, exist_ok=True)
         os.environ["SPECTRAL_UI_PROFILE"] = str(args.profile.resolve())
     if args.child:
-        run(args.plugin.resolve(), args.seconds, args.fps, args.cycles, args.keyboard)
+        # Never let a diagnostic host read or change the user's real settings.
+        with tempfile.TemporaryDirectory(prefix="aflocat-settings-") as root:
+            os.environ["AUDIO_PLUGIN_SETTINGS_ROOT"] = root
+            config = Path(root) / "com.aflocat.audio" / "settings.json"
+            config.parent.mkdir(parents=True)
+            config.write_text(json.dumps({"schema_version": 1, "global": {"maximum_ui_fps": args.fps, "language": "system"}, "plugins": {}}), encoding="utf-8")
+            run(args.plugin.resolve(), args.seconds, args.fps, args.cycles, args.keyboard)
     else:
         command = [sys.executable, __file__, str(args.plugin.resolve()), "--seconds", str(args.seconds), "--fps", str(args.fps), "--cycles", str(args.cycles), "--child"]
         if args.keyboard:
