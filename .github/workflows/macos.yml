@@ -47,7 +47,6 @@ jobs:
     env:
       CARGO_TERM_COLOR: never
       MACOSX_DEPLOYMENT_TARGET: '15.0'
-      AUDIO_PLUGIN_SETTINGS_ROOT: ${{ runner.temp }}/spectral-settings
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -55,6 +54,7 @@ jobs:
       - name: Install pinned Rust and record environment
         run: |
           mkdir -p target/macos-validation
+          echo "AUDIO_PLUGIN_SETTINGS_ROOT=$RUNNER_TEMP/spectral-settings" >> "$GITHUB_ENV"
           toolchain="$(python3 -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("rust-toolchain.toml").read_text())["toolchain"]["channel"])')"
           rustup toolchain install "$toolchain" --profile minimal
           [[ "$(uname -m)" == '${{ matrix.arch }}' ]]
