@@ -42,6 +42,10 @@ Windows x86-64 CLAP：`target/bundled/my_spectral_resonator.clap`，版本副本
 
 构建：`./scripts/setup-installer-tools.ps1` 准备便携 Inno Setup，随后运行 `./scripts/build-windows-installer.ps1 -Offline`；已有已验证的当前版本制品可用 `-SkipBuild` 仅打包。详细用法、升级规则和验证边界见 [Windows 安装器说明](installer/windows/README.md) 与 [安装生命周期验证](docs/validation/WINDOWS_INSTALLER_2026-09-29.md)。当前安装包尚未代码签名。
 
+## macOS 编译测试
+
+没有 Mac 时，可使用 GitHub Actions 分别在 Apple Silicon 和 Intel 的 macOS 15 runner 上原生编译、运行单元测试和 CLAP 接口检查，并下载实验性测试包。构建方法、制品入口及验证边界见 [Mac 构建说明](docs/MACOS_BUILD.md)。测试包仅做 ad-hoc 签名，尚未完成公证或真实音频宿主验收。
+
 ## 全局偏好
 
 Settings 提供 Noisy Cat Audio 全局设置。最大 UI 帧率与语言偏好保存在 Windows 的 `%APPDATA%/com.aflocat.audio/settings.json`，同品牌插件共用；帧率不再随工程保存，旧工程的帧率字段不覆盖全局值。默认 60 FPS、跟随系统语言；本版只保存语言选择，界面仍为英文。FFT、图层开关和 FPS 调试显示仍是实例/工程设置。

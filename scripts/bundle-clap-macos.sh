@@ -84,7 +84,8 @@ codesign --force --sign - --timestamp=none "$bundle"
 codesign --verify --strict --verbose=2 "$bundle"
 archive="$output/SpecatralResonator-$version-macOS-$arch-test.zip"
 ditto -c -k --sequesterRsrc --keepParent "$bundle" "$archive"
-shasum -a 256 "$archive" > "$archive.sha256"
+# Keep the checksum relative so it remains usable after downloading the ZIP.
+(cd "$output" && shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256")
 
 # The smoke tests extract this very archive, so their evidence covers the
 # packaged executable rather than an unrelated target/release library.
