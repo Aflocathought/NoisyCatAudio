@@ -105,7 +105,7 @@ def main():
         ax.spines[["top", "right"]].set_visible(False)
     fig.suptitle("Window-size evaluation at 48 kHz", fontsize=16, weight="bold")
     fig.supxlabel("Top: 440 Hz, 8 partials, T60 5 ms, Natural, alignment 0; each trace normalized.\n"
-                  "Bottom: release offline DSP, Granular, median of 3 trials; not a Bitwig real-time guarantee.", fontsize=9)
+                  "Bottom: release offline DSP, Granular, median of 3 trials; not a host real-time guarantee.", fontsize=9)
     fig.savefig(root / "comparison.png", dpi=160)
     fig.savefig(root / "comparison.svg")
     for item in summaries:

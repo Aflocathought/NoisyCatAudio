@@ -1,5 +1,9 @@
 # 具体实现设计：Rust 频谱共鸣器
 
+0.15.0 更新（2026-09-29）：增加可复用的 `audio-plugin-settings` crate。共享命名空间 `com.aflocat.audio` 保存全局帧率与语言，后台同步、OS 文件锁、按键合并、原子替换；旧工程不再覆盖全局帧率。当前品牌为 Noisy Cat Audio，产品为 Specatral Resonator，插件 CLAP ID 保持不变。2026-10-02 已配置正式仓库 URL，打开前保留确认对话框。参见 [配置协议](../crates/audio-plugin-settings/README.md) 与 [验证记录](validation/GLOBAL_PREFERENCES_2026-09-29.md)。
+
+0.14.1 更新（2026-09-29）：DRY / WET 图例左侧新增可点击色块，分别控制频谱图层显示。`ui_show_dry` / `ui_show_wet` 是保存到工程的界面偏好，旧工程默认均显示；不加入音频自动化。UI 保留两路映射后的亮度历史，切换时只重着色并上传一次完整纹理，常态仍仅更新新行，冻结历史与底部亮边同步生效。详见 [图层开关记录](validation/SPECTRUM_LAYERS_2026-09-29.md)。
+
 0.14.0 更新（2026-09-29）：Low / Mid、Mid / High 下方新增可保存/自动化的 mute_low / mute_high。原中频掩码不变，额外预计算两侧干声权重，约 20 ms 的 hop 系数淡变后沿原 IFFT/OLA 路径输出；不增加 FFT，不改延迟、不影响共鸣激励和湿声处理。默认关闭保持旧路径，旧工程缺失时显式补 false。见 [低/高频静音记录](validation/BAND_MUTES_2026-09-29.md)。
 
 0.13.3 更新（2026-09-28）：按用户修正将过渡曲线下移至旋钮侧边，弯曲延伸到控制行顶部以下 14 像素，上方额外留白缩至 18 像素。端点、两位小数及参数行为保留，频谱取回 36 像素高度。见 [分频引导线记录](validation/CROSSOVER_GUIDES_2026-09-28.md)。
@@ -26,9 +30,9 @@
 
 0.9.1 更新（2026-09-27）：显示历史缩短至约 4.3 秒，低频使用 16384 点分析窗，中高频保留 4096 点短窗，窗口新增高度全部用于频谱。音频 DSP、4096 样本干声对齐和宿主参数保持不变，见 [0.9.1 记录](validation/UI_REFINEMENT_2026-09-27.md)。0.9.0 已接入 egui/wgpu 编辑器、实际 Unison 后湿声分析、分频线手势、Remote Controls 和可选 Stereo + Wet 输出。下文阶段规划保留历史背景，UI 基础实现与官方接口调查见 [0.9.0 验证记录](validation/UI_2026-09-27.md)。
 
-文档日期：2026-09-27。状态：设计基线及实现记录；0.5.0 接入精确频率共鸣，0.5.1 新增中频 Mid Mix，0.6.0 增加 MIDI 复音与自然换音尾音，0.6.1 将泛音上限扩至 1024、新实例默认设为 256，0.7.0 增加逐泛音调制、Unison 与六节点衰减曲线，0.7.1 优化频谱合成，0.7.2 增加 Voice Spread，0.7.3 扩至 16 MIDI 声部和 8 路 Unison，0.8.0 将泛音上限改为 512 并增加后处理 Unison。用户反馈 0.7.0 当前 Bitwig 工程运行正常，完整宿主验收待完成。第 6.6 节描述算法，第 7.3 节描述干湿路由，第 8 节描述复音与抢占，第 16 节描述新效果，第 17 节描述性能优化，第 18 节描述声场分布，第 19 节描述容量扩展，第 20 节描述双算法 Unison；最新证据见 [0.8.0 记录](validation/POST_UNISON_2026-09-27.md)。
+文档日期：2026-09-27。状态：设计基线及实现记录；0.5.0 接入精确频率共鸣，0.5.1 新增中频 Mid Mix，0.6.0 增加 MIDI 复音与自然换音尾音，0.6.1 将泛音上限扩至 1024、新实例默认设为 256，0.7.0 增加逐泛音调制、Unison 与六节点衰减曲线，0.7.1 优化频谱合成，0.7.2 增加 Voice Spread，0.7.3 扩至 16 MIDI 声部和 8 路 Unison，0.8.0 将泛音上限改为 512 并增加后处理 Unison。用户反馈 0.7.0 当前音频宿主工程运行正常，完整宿主验收待完成。第 6.6 节描述算法，第 7.3 节描述干湿路由，第 8 节描述复音与抢占，第 16 节描述新效果，第 17 节描述性能优化，第 18 节描述声场分布，第 19 节描述容量扩展，第 20 节描述双算法 Unison；最新证据见 [0.8.0 记录](validation/POST_UNISON_2026-09-27.md)。
 
-本文件与[项目大纲](PROJECT_OUTLINE.md)配套。公式、接口草图、参数和验收阈值用于指导实现，不代表已经编译、已经达到性能目标，或与 Ableton 的内部算法相同。
+本文件与[项目大纲](PROJECT_OUTLINE.md)配套。公式、接口草图、参数和验收阈值用于指导实现，不代表已经编译、已经达到性能目标，或与 其他产品 的内部算法相同。
 
 ## 1. 实现原则与依赖基线
 
@@ -107,6 +111,8 @@ spectral-resonator/
 ├── tools/render-fixtures/      # 离线参考渲染与数值比较
 ├── xtask/                      # 采用匹配版本的官方打包工具
 ├── scripts/bundle-clap.ps1     # 当前 Windows CLAP 打包脚本
+├── installer/windows/          # Inno Setup 安装/更新/卸载向导及中文翻译
+├── scripts/build-windows-installer.ps1 # Windows EXE，包含按需 VC++ 运行库
 ├── scripts/validate-clap.ps1   # 对打包文件运行验证器
 └── docs/
     ├── PROJECT_OUTLINE.md
@@ -130,7 +136,7 @@ spectral-resonator/
 
 支持 2→2 和 1→1 声道布局，并将 2→2 列在首位作为 nice-plug/CLAP 默认配置。立体声是首个可演奏版本的必备能力：左右分别保留分析历史、FFT 缓冲、OLA 输出和复数共鸣状态；两侧共享只读的 crossover 权重、目标频率及衰减控制。每个声道的输出只由该声道输入及该声道状态产生；不得先混为单声道再复制到左右，也不得在分频混合时把左右声道交叉接线。单声道实例只分配和处理一个声道。
 
-插件声明 2→2 与 1→1 布局，M1 的流式 STFT 已为左右分别分配输入与输出 ring，增益链路对两路应用同一个平滑控制值，没有求和或复制声道。nice-plug 将第一个布局作为默认配置；M2 构建曾把 1→1 放在首位，可能导致 Bitwig 默认选择单声道。现已改为 2→2 优先，源码检查确认左右不同输入在 crossover 链路中互不影响；宿主是否实际协商为 2→2 仍需新版 Bitwig 验证。
+插件声明 2→2 与 1→1 布局，M1 的流式 STFT 已为左右分别分配输入与输出 ring，增益链路对两路应用同一个平滑控制值，没有求和或复制声道。nice-plug 将第一个布局作为默认配置；M2 构建曾把 1→1 放在首位，可能导致音频宿主默认选择单声道。现已改为 2→2 优先，源码检查确认左右不同输入在 crossover 链路中互不影响；宿主是否实际协商为 2→2 仍需新版音频宿主验证。
 
 内部处理使用 f32，离线参考计算可使用 f64。宿主提供的块长与 FFT 长度无关，应能处理 1、7、64、127、128、257、512、1024 等块大小及其混合序列。不能假设每次回调都固定为 128 或正好等于 hop。
 
@@ -138,7 +144,7 @@ spectral-resonator/
 
 `latency_samples` 表示输入到输出的固定排程延迟。`tail` 表示输入停止后还会产生多久的衰减声音，两者不能混用。
 
-M1 自建流式调度层的 `latency_samples()` 返回 N=4096，并在 `activate` 时报告给宿主。离线脉冲测试在单声道与立体声路径确认了 N 样本偏移，而不是 hop 或 N/2；Bitwig 对新版本的实际延迟仍需核对。
+M1 自建流式调度层的 `latency_samples()` 返回 N=4096，并在 `activate` 时报告给宿主。离线脉冲测试在单声道与立体声路径确认了 N 样本偏移，而不是 hop 或 N/2；音频宿主对新版本的实际延迟仍需核对。
 
 报告给宿主的延迟必须与干声内部对齐使用同一个值。宿主 PDC 对齐轨道，不能代替插件内部的干湿对齐；crossover 的干、湿输入也必须处于同一采样时间轴。若采用会增加固定延迟的分频实现，该延迟必须同时进入两条路径和宿主报告。首版不引入带 look-ahead 的 limiter；若以后引入，必须同时更新报告和干声路径。
 
@@ -432,11 +438,11 @@ Input Send 只影响进入共鸣器的激励，不改变旁路干声。正常的
 
 处理负载约随有效泛音数、声部数、Unison 和声道数增加。设置总泛音预算并清楚定义超额策略，不能在 CPU 紧张时静默丢弃随机泛音或音符。复音参数调制和 MPE 只有在真正实现每声部参数与事件映射后才能开启相应能力声明。
 
-### 8.4 Bitwig 接线验证
+### 8.4 音频宿主接线验证
 
-首版作为接收音符的 Audio Effect 导出。先在音频轨道上加载，再在其前方通过 Note Receiver 接收另一轨道的音符。验证有音频无音符、有音符无音频、两者同时存在，以及轨道静音/停止等情况。
+首版作为接收音符的 Audio Effect 导出。先在音频轨道上加载，再在其前方通过 MIDI 路由 接收另一轨道的音符。验证有音频无音符、有音符无音频、两者同时存在，以及轨道静音/停止等情况。
 
-这描述的是计划验证的路由，不代表已在本机完成操作。测试记录必须包含 Bitwig 实际版本、插件格式、采样率、缓冲大小和具体路由。
+这描述的是计划验证的路由，不代表已在本机完成操作。测试记录必须包含音频宿主实际版本、插件格式、采样率、缓冲大小和具体路由。
 
 ## 9. Rust 内存安全与实时线程契约
 
@@ -518,9 +524,9 @@ M5 覆盖缩放、DPI、快速反复开关编辑器、多实例、图形设备�
 
 ### 11.1 性能测量
 
-先记录基准机器、CPU、电源模式、操作系统、Bitwig 版本、构建模式和插件配置。Release 测量回调 p50/p95/p99 与最大耗时，不只读宿主平均 CPU 百分比。
+先记录基准机器、CPU、电源模式、操作系统、音频宿主版本、构建模式和插件配置。Release 测量回调 p50/p95/p99 与最大耗时，不只读宿主平均 CPU 百分比。
 
-回调截止时间为 `block_size/fs`。初始目标是在 48 kHz、128 点、单实例、单声部、64 泛音的基线下，p99 不超过该截止时间的 50%，最大值不超过 80%，并在至少 10 分钟播放中无音频 underrun。M3 与 0.6.0 已分别测量单音/8 声部的短时离线引擎耗时，见验证记录；Bitwig 实时回调和至少 10 分钟播放尚未验收。
+回调截止时间为 `block_size/fs`。初始目标是在 48 kHz、128 点、单实例、单声部、64 泛音的基线下，p99 不超过该截止时间的 50%，最大值不超过 80%，并在至少 10 分钟播放中无音频 underrun。M3 与 0.6.0 已分别测量单音/8 声部的短时离线引擎耗时，见验证记录；音频宿主实时回调和至少 10 分钟播放尚未验收。
 
 FFT 的突发运算可能集中在某一次小块回调中，因此平均耗时低仍可能超时。需要记录恰好触发分析/重建的回调，必要时调整调度或算法，不通过丢音频来降低统计值。
 
@@ -530,7 +536,7 @@ GPU 编辑器以稳定 60 FPS 为初始目标，同时报告 p99 帧时间与最
 
 测试素材包括单脉冲、扫频、正弦、双音、固定种子噪声，以及用户有权使用的鼓、人声和乐器片段。听感 A/B 先匹配电平，分别比较瞬态、音准、尾音、金属感、立体声与参数过渡。
 
-若使用 Ableton 作为参考，在合法可用环境中手工匹配可比参数并录制对比。记录 FFT/延迟和内部参数不可知的边界，不把相似听感或某个预设的匹配当成算法等价证明。
+若使用 其他产品 作为参考，在合法可用环境中手工匹配可比参数并录制对比。记录 FFT/延迟和内部参数不可知的边界，不把相似听感或某个预设的匹配当成算法等价证明。
 
 ## 12. 第一轮实际编码任务
 
@@ -538,7 +544,7 @@ GPU 编辑器以稳定 60 FPS 为初始目标，同时报告 p99 帧时间与最
 
 1. 已创建 Rust workspace、项目工具链与锁文件，并用实际增益插件确认本机依赖与编译链路。
 2. 已建立 `spectral-dsp` 与 `spectral-resonator-plugin`，使用开发期插件标识；DSP crate 禁止 unsafe，插件导出与系统适配留在外层。
-3. 已接入平滑增益参数，用户确认 M0 版本在 Bitwig 加载和调音量；工程恢复、多实例及完整自动化仍待宿主验证。
+3. 已接入平滑增益参数，用户确认 M0 版本在音频宿主加载和调音量；工程恢复、多实例及完整自动化仍待宿主验证。
 4. 已实现固定 N=4096、H=512 的透明 STFT、逐声道状态、归一化、延迟与冲刷测试；三频段原型在同一 STFT 帧内重组干湿频谱，保持原有固定延迟。
 5. 已接入 M2 复数状态与持续共鸣；离线检查覆盖相位、T60、换音保留旧尾音和立体声隔离。用户反馈 0.3.0 的共鸣偏小、立体声表现像单声道；0.4.0 提高全新实例默认湿声增益，并将 2→2 设为 CLAP 默认布局，待宿主复验。
 6. 已接入低／中／高 crossover 的 FFT 权重和两个分频参数；左右独立、频段路由与带外渐近斜率已有离线检查。它仍使用 M2 的整数频点湿声，不能宣称 M3 精确音高已完成。
@@ -561,7 +567,7 @@ clap-validator validate target/bundled/my_spectral_resonator.clap
 ./scripts/validate-clap.ps1
 ```
 
-当前 Windows 打包脚本将 release DLL 复制为单个 `.clap` 文件；目录式 `.clap` 路径无法由 Windows 的验证器当作动态库加载。`cargo install --git` 在本机因全局 USTC 镜像返回 404 未完成，已从同一 Git checkout 构建验证器并放入 `target/tools/bin`，实际对 `target/bundled/my_spectral_resonator.clap` 验证通过。CI 与后续发布构建应使用锁文件；验证器通过不能替代 Bitwig 中的试听和延迟检查。
+当前 Windows 打包脚本将 release DLL 复制为单个 `.clap` 文件；目录式 `.clap` 路径无法由 Windows 的验证器当作动态库加载。`cargo install --git` 在本机因全局 USTC 镜像返回 404 未完成，已从同一 Git checkout 构建验证器并放入 `target/tools/bin`，实际对 `target/bundled/my_spectral_resonator.clap` 验证通过。CI 与后续发布构建应使用锁文件；验证器通过不能替代音频宿主中的试听和延迟检查。
 
 建议使用小而独立的提交顺序：工程与增益插件 → 透明 STFT → 干声延迟与 crossover → M2 状态 → 精确频率参考 → 实时重建 → MIDI → GUI。每个提交只声明其真正通过的检查。
 
@@ -577,25 +583,21 @@ M1、M2 和三频段原型的证据与限制分别见 `docs/validation/M1_2026-0
 
 | 资料 | 用途与边界 |
 | --- | --- |
-| [Ableton 开发者访谈](https://www.ableton.com/en/blog/spectral-sound-a-look-at-live-11s-new-spectral-devices/) | 确认 FFT、频谱处理、IFFT 的总体路线；未公开本项目第 5/6 节算法 |
-| [Ableton 参数手册](https://www.ableton.com/en/live-manual/12/live-audio-effect-reference/#spectral-resonator) | 功能和参数语义参考 |
-| [Bitwig 插件支持](https://www.bitwig.com/learnings/plug-in-hosting-crash-protection-in-bitwig-studio-20/) | 确认宿主支持 CLAP/VST3，不能代替本机插件测试 |
 | [nice-plug README](https://codeberg.org/RustAudio/nice-plug/src/commit/e60b5db09d8606c3dc3e93f982847a00bce17325/README.md) | 框架能力、维护状态和示例入口 |
 | [nice-plug 入门](https://codeberg.org/RustAudio/nice-plug/src/commit/e60b5db09d8606c3dc3e93f982847a00bce17325/GETTING_STARTED.md) | 当前生命周期、CLAP 导出和 bundle 命令 |
 | [nice-plug 包清单](https://codeberg.org/RustAudio/nice-plug/src/commit/e60b5db09d8606c3dc3e93f982847a00bce17325/crates/nice-plug/Cargo.toml) | 0.4.2、默认 features、分配检测与 unsafe 选项 |
 | [STFT 示例](https://codeberg.org/RustAudio/nice-plug/src/commit/e60b5db09d8606c3dc3e93f982847a00bce17325/examples/stft/src/lib.rs) | FFT 卷积、RealFFT 和 scratch 使用；不是共鸣器成品 |
 | [StftHelper 源码](https://codeberg.org/RustAudio/nice-plug/src/commit/e60b5db09d8606c3dc3e93f982847a00bce17325/crates/nice-plug-core/src/util/stft.rs) | 环形缓冲、overlap-add 与 latency_samples 的定义 |
-| [clap-validator](https://github.com/free-audio/clap-validator) | Windows 单文件 CLAP 的格式、处理、参数与状态检查；不能代替音频数值和 Bitwig 宿主测试 |
+| [clap-validator](https://github.com/free-audio/clap-validator) | Windows 单文件 CLAP 的格式、处理、参数与状态检查；不能代替音频数值和真实音频宿主测试 |
 | [egui 适配器清单](https://codeberg.org/RustAudio/nice-plug/src/commit/e60b5db09d8606c3dc3e93f982847a00bce17325/crates/nice-plug-egui/Cargo.toml) | OpenGL/wgpu 功能开关及匹配依赖 |
 | [RustFFT](https://github.com/ejmahler/RustFFT)、[RealFFT](https://github.com/HEnquist/realfft) | CPU FFT 与实数包装；计划、scratch 和缩放以锁定版本 API 为准 |
 | [wgpu](https://github.com/gfx-rs/wgpu) | 原生 GPU 后端；实际驱动兼容性需要测量 |
-| [Vital 主界面](https://github.com/mtytel/vital/blob/main/src/interface/editor_sections/full_interface.cpp) | 自定义 GPU 渲染架构参考；代码许可与本项目选择分开核实 |
 
 ## 15. 本次文档交付边界
 
 最新实现为 0.8.2，第 22 节修正 CLAP 有限尾音调度与通知，模拟 Bounce 通过，宿主结果待确认；第 21 节的上一候选不足以解决用户的问题。功能与 0.8.0 保持一致：16 MIDI 声部、最多 8 路 Unison 和 Voice Spread，Harmonics 上限 512、默认 256，以及 Spectral / Post (Audio) 切换。默认 Unison=1、Spread=0%；旧状态缺失 Unison Mode 时补为 Spectral，已保存的 Post 保留，超过 512 的 Harmonics 明确钳到新上限，其余有效值保留。算法、音频回归与三轮性能证据见 [后处理 Unison 记录](validation/POST_UNISON_2026-09-27.md)。以下段落保留此前各阶段的历史证据，不表示当前仍停在整数 bin 原型。
 
-本设计写成时只包含方案和文档。后续 M0 编码建立了 `spectral-dsp` 与 `spectral-resonator-plugin`；用户于 2026-09-26 反馈：M0 插件已在 Bitwig 成功加载，Output Gain 可以调节音量，暂未见问题。M1 随后完成固定配置的透明 STFT、左右独立流式调度和 Windows 单文件 CLAP 打包；用户在 Bitwig 看到约 92.9 ms 延迟，与 44.1 kHz 下的 4096 样本一致。M2 已增加整数频点共鸣，用户反馈其响度偏低、立体声听感像单声道。0.4.0 因此将 2→2 作为默认布局，提高湿声增益，并接入三频段 crossover；离线源码与 CLAP 检查通过，新的 Bitwig 试听、实际端口、CPU 与精确音高仍待验收。
+本设计写成时只包含方案和文档。后续 M0 编码建立了 `spectral-dsp` 与 `spectral-resonator-plugin`；用户于 2026-09-26 反馈：M0 插件已在音频宿主成功加载，Output Gain 可以调节音量，暂未见问题。M1 随后完成固定配置的透明 STFT、左右独立流式调度和 Windows 单文件 CLAP 打包；用户在音频宿主看到约 92.9 ms 延迟，与 44.1 kHz 下的 4096 样本一致。M2 已增加整数频点共鸣，用户反馈其响度偏低、立体声听感像单声道。0.4.0 因此将 2→2 作为默认布局，提高湿声增益，并接入三频段 crossover；离线源码与 CLAP 检查通过，新的音频宿主试听、实际端口、CPU 与精确音高仍待验收。
 
 额外进行了一次文档公式的独立数值核对：使用 N=64、三个非整数频点正弦、非零复数相位和平方根 Hann 窗，完整频谱公式经 IFFT 后与直接时域合成的相对 RMS 误差约为 7.06e-15；N/H=8 的透明路径窗乘积重叠和为 4；T60 系数在规定时长累计为 -60 dB。这是公式和归一化的局部核对，不代表稀疏优化、流式引擎、宿主、音准或性能已经通过验收。
 
@@ -623,7 +625,7 @@ M1、M2 和三频段原型的证据与限制分别见 `docs/validation/M1_2026-0
 | Grain Decay | 5–500 ms 指数时间常数，默认 80 ms；不等于 T60 或硬性颗粒长度 |
 | Unison / Unison Detune | 1–4 路，均匀覆盖正负 Detune（0–50 音分）；按正在淡入淡出的副本增益之和归一化 |
 
-Granular 是频谱泛音包络调制，不是时域采样颗粒切片。Rate=0 停止新颗粒，现有包络继续衰减；包络输出还有 20 ms 平滑，实际时间形状受 H=512 和 N=4096 的时间分辨率影响。Wander 的随机目标间插值是本项目的实现选择，不宣称复现 Live 手册所述随机锯齿源的内部行为。依据为 2026-09-26 核对的 [Live 官方手册](https://www.ableton.com/en/live-manual/12/live-audio-effect-reference/#spectral-resonator)，其内部算法并未公开。
+Granular 是频谱泛音包络调制，不是时域采样颗粒切片。Rate=0 停止新颗粒，现有包络继续衰减；包络输出还有 20 ms 平滑，实际时间形状受 H=512 和 N=4096 的时间分辨率影响。Wander 使用随机目标间插值；这些均为本项目的实现选择。
 
 ### 16.3 相位、核函数及实时约束
 
@@ -631,7 +633,7 @@ Granular 是频谱泛音包络调制，不是时域采样颗粒切片。Rate=0 �
 
 预计算 257 行、每行 65 点的周期 Hann 复数频谱核。运行时对相邻分数 bin 行插值，再平移到目标整数 bin，避免每声部、每 hop 重新计算全部三角函数核。与直接分数频率 Hann 合成对照，测试频率上的最差相对频谱 RMS 为 `2.3054e-5`。上移后的频率接近 `0.49*fs` 时渐弱并排除，不折回频带内。
 
-八个 ModulationBank 及每个 bank 的 1024×4 个 lane 在激活时分配，callback/reset 原位复用。每个 MIDI 声部独立播种，左右共用已准备好的轨迹；声部退休和模式切换不会新建堆对象。泛音减少时仍为原高泛音准备调制，以使其短尾音平滑结束。47 项源码测试含真正 Plugin::process 的模式/曲线切换、可变块、Panic 和 reset 零分配检查；完整结果与性能限制见本版验证记录。最大 8×1024×4 配置成本很高，没有自动降低用户参数或采用 Live 的复音共享泛音预算规则。
+八个 ModulationBank 及每个 bank 的 1024×4 个 lane 在激活时分配，callback/reset 原位复用。每个 MIDI 声部独立播种，左右共用已准备好的轨迹；声部退休和模式切换不会新建堆对象。泛音减少时仍为原高泛音准备调制，以使其短尾音平滑结束。47 项源码测试含真正 Plugin::process 的模式/曲线切换、可变块、Panic 和 reset 零分配检查；完整结果与性能限制见本版验证记录。最大 8×1024×4 配置成本很高，没有自动降低用户参数或采用 其他产品 的复音共享泛音预算规则。
 
 ## 17. 0.7.1：合并镜像频谱写入
 
@@ -659,7 +661,7 @@ Granular 是频谱泛音包络调制，不是时域采样颗粒切片。Rate=0 �
 
 Windows x86-64 的 `Lane` 实测 72 字节，预分配调制池为 `16 × 1024 × 8 × 72 = 9,437,184` 字节（9 MiB），旧版为 2.25 MiB。`Voice` 为 20,592 字节，十六个共 329,472 字节。这两项较 0.7.2 合计增加约 6.91 MiB，未包含模板、FFT、宿主和分配器开销，不是进程总内存。无论实际使用几路副本，都在初始化时完成这些分配。
 
-新增测试验证全部八路对频谱合成的贡献及归一化；十六声部的输出等于两组八声部输出之和（干声只计一次），松键后十六条尾音仍在；覆盖第 17 个音符抢占、全部待启动槽过载、Spread 位置保留，以及 192 kHz / 16×1024×8 的真实插件 callback/reset 零分配。53 项测试和 CLAP 验证通过。三轮离线测量表明 48 kHz / 256 samples / 16×256×8 在部分场景超过预算，512 samples 下本次测量有余量；完整数据与峰值保留在 [0.7.3 验证记录](validation/UNISON8_POLYPHONY16_2026-09-27.md)，不能用功能检查替代 Bitwig 实时验收。
+新增测试验证全部八路对频谱合成的贡献及归一化；十六声部的输出等于两组八声部输出之和（干声只计一次），松键后十六条尾音仍在；覆盖第 17 个音符抢占、全部待启动槽过载、Spread 位置保留，以及 192 kHz / 16×1024×8 的真实插件 callback/reset 零分配。53 项测试和 CLAP 验证通过。三轮离线测量表明 48 kHz / 256 samples / 16×256×8 在部分场景超过预算，512 samples 下本次测量有余量；完整数据与峰值保留在 [0.7.3 验证记录](validation/UNISON8_POLYPHONY16_2026-09-27.md)，不能用功能检查替代音频宿主实时验收。
 
 ## 20. 0.8.0：后处理 Unison 与 512 泛音
 
@@ -675,15 +677,15 @@ Windows x86-64 的 `Lane` 实测 72 字节，预分配调制池为 `16 × 1024 �
 
 ## 21. 0.8.1：Bounce 模式切换兼容修复候选
 
-用户在 Bitwig 6.1 中执行 Bounce 时，界面仍可操作但渲染无法开始。日志显示实时到离线的转换迟迟没有完成。nice-plug 0.4.2 在激活状态下切换 render mode 会调用宿主 `request_restart()`；本插件不依赖处理模式，能够省略这次额外握手。新增默认开启的框架策略 `CLAP_REACTIVATE_ON_RENDER_MODE_CHANGE`，仅本插件设为 false，仍记录模式并保留其他正常激活流程。没有更改 DSP，也没有限制为实时导出。
+用户在音频宿主 6.1 中执行 Bounce 时，界面仍可操作但渲染无法开始。日志显示实时到离线的转换迟迟没有完成。nice-plug 0.4.2 在激活状态下切换 render mode 会调用宿主 `request_restart()`；本插件不依赖处理模式，能够省略这次额外握手。新增默认开启的框架策略 `CLAP_REACTIVATE_ON_RENDER_MODE_CHANGE`，仅本插件设为 false，仍记录模式并保留其他正常激活流程。没有更改 DSP，也没有限制为实时导出。
 
-框架源代码保存在 `vendor/nice-plug`，仅两处上游源文件变更，通过根 Cargo.toml patch 引用。实际 CLAP ABI 测试在旧版复现模式切换重启请求，新版请求次数为零；Spectral/Post 分别在四轮模式切换中保持音频和状态一致，跨版本同算法音频哈希也相同。58 项源码测试与 CLAP 验证通过。尚未获得 Bitwig 挂起线程栈或修复后的 Bounce 成功证据，因此保持“候选修复”的结论。完整记录见 [0.8.1 验证](validation/BOUNCE_TRANSITION_2026-09-27.md)。
+框架源代码保存在 `vendor/nice-plug`，仅两处上游源文件变更，通过根 Cargo.toml patch 引用。实际 CLAP ABI 测试在旧版复现模式切换重启请求，新版请求次数为零；Spectral/Post 分别在四轮模式切换中保持音频和状态一致，跨版本同算法音频哈希也相同。58 项源码测试与 CLAP 验证通过。尚未获得音频宿主挂起线程栈或修复后的 Bounce 成功证据，因此保持“候选修复”的结论。完整记录见 [0.8.1 验证](validation/BOUNCE_TRANSITION_2026-09-27.md)。
 
 ## 22. 0.8.2：有限尾音调度与双线程模拟 Bounce
 
 用户反馈 0.8.1 仍挂起。扩展实际 CLAP ABI 模拟宿主，将主线程状态保存/延迟查询与音频线程处理并发运行，反复执行录制标志、停止输入、尾音等待、停止/重置、状态恢复、离线切换和不同采样率下的重新激活。没有复现显式 stop/state/activate 的死锁，但旧版静音后始终返回 CONTINUE，不能让按 CLAP 状态等待尾音结束的调度器完成暂停。
 
-0.8.2 将 `ProcessStatus::Tail` 映射为 `CLAP_PROCESS_TAIL`，并在长度改变时从音频线程调用可选 `clap_host_tail.changed()`；先发布新值并释放插件锁，再通知宿主，使其可以立即回查。DSP 和尾音时长公式不变。四个 Internal/MIDI × Spectral/Post 配置共 12 次模拟离线渲染通过，与 0.8.1 的原始音频哈希逐份相同。58 项源码测试与 CLAP 验证通过。模拟调度器不等同于 Bitwig 内部实现，实际 Bounce 修复确认仍待用户环境结果。详见 [0.8.2 记录](validation/BOUNCE_TAIL_2026-09-27.md)。
+0.8.2 将 `ProcessStatus::Tail` 映射为 `CLAP_PROCESS_TAIL`，并在长度改变时从音频线程调用可选 `clap_host_tail.changed()`；先发布新值并释放插件锁，再通知宿主，使其可以立即回查。DSP 和尾音时长公式不变。四个 Internal/MIDI × Spectral/Post 配置共 12 次模拟离线渲染通过，与 0.8.1 的原始音频哈希逐份相同。58 项源码测试与 CLAP 验证通过。模拟调度器不等同于音频宿主内部实现，实际 Bounce 修复确认仍待用户环境结果。详见 [0.8.2 记录](validation/BOUNCE_TAIL_2026-09-27.md)。
 
 ## 23. 0.10.0：紧凑控件、衰减图与帧率
 
@@ -701,4 +703,4 @@ Windows baseview 0.3.4 的原 15 ms SetTimer 不足以支撑 90/120 FPS。新增
 
 真实 CLAP 窗口测试进一步定位到上游 wgpu 渲染中的条件错误：MSAA 关闭时 `msaa_texture_view` 必然为空，却因此每帧重建 surface，造成 GPU 等待。修正为只有启用 MSAA 时才要求对应纹理，正常帧复用 surface。插件选择 AutoNoVsync，由显式帧率上限调度；平台仍可能回退至受显示刷新限制的模式。瀑布分析继续为 30 行/秒，在两行之间插值纹理游标；音频停止时最多外推一行，Freeze 保持当前位置。
 
-本版渲染/定时补丁各自说明于 `vendor/egui-baseview/PATCHES.md` 和 `vendor/baseview/PATCHES.md`。具体性能分布、GUI 生命周期、音频回归及制品记录见 [0.10.0 验证](validation/UI_CONTROLS_2026-09-27.md)。这些证据不等于 Bitwig 实际工程的显示流畅度或 Bounce 验收。
+本版渲染/定时补丁各自说明于 `vendor/egui-baseview/PATCHES.md` 和 `vendor/baseview/PATCHES.md`。具体性能分布、GUI 生命周期、音频回归及制品记录见 [0.10.0 验证](validation/UI_CONTROLS_2026-09-27.md)。这些证据不等于音频宿主实际工程的显示流畅度或 Bounce 验收。

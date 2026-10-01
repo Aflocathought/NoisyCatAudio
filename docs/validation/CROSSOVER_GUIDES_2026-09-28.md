@@ -6,7 +6,7 @@
 
 下方旋钮、参数页及页脚坐标保持不变，减少的 36 像素还给频谱。本次仅调整 UI 坐标，未修改参数或音频处理。
 
-现有编辑器测试 8 项及 GPU 预览通过，已检查默认布局、Routing 和最小窗口下分频最小/最大值，曲线不遮住标签或数值。Clippy、格式与空白检查通过；最终制品 CLAP validator 为 36 passed / 0 failed / 0 warnings / 8 skipped，模拟宿主窗口生命周期、数值输入和空格消息检查通过。日志为 `target/guide-inset-{tests,ui,clippy,validator,keyboard}.log`，截图和发布元数据位于 `target/guide-inset-preview/`。真实 Bitwig 未验证。
+现有编辑器测试 8 项及 GPU 预览通过，已检查默认布局、Routing 和最小窗口下分频最小/最大值，曲线不遮住标签或数值。Clippy、格式与空白检查通过；最终制品 CLAP validator 为 36 passed / 0 failed / 0 warnings / 8 skipped，模拟宿主窗口生命周期、数值输入和空格消息检查通过。日志为 `target/guide-inset-{tests,ui,clippy,validator,keyboard}.log`，截图和发布元数据位于 `target/guide-inset-preview/`。真实音频宿主未验证。
 
 制品为 `target/artifacts/0.13.3/my_spectral_resonator.clap`，稳定路径仍为 `target/bundled/my_spectral_resonator.clap`；哈希、大小和旧版备份见 `target/guide-inset-preview/publication.json`。
 
@@ -18,7 +18,7 @@
 
 Wet level 与 Routing 中的 Output gain 固定显示两位小数，例如 `12.04 dB`、`0.00 dB`，静音保留 `−∞ dB`，接近零时避免显示 `-0.00`。仅格式化非编辑状态的字符串；进入编辑仍使用未舍入的实际值，输入和保存不受两位小数限制。
 
-0.13.2 验证记录：现有编辑器 8 项测试、单独 GPU 预览、Clippy、格式与空白检查通过；已目视检查默认布局、Routing 和最小窗口下分频两端的曲线、端点与小数位。最终制品 CLAP validator 为 36 passed / 0 failed / 0 warnings / 8 skipped，模拟宿主窗口生命周期、精确输入和空格消息检查通过。日志为 `target/guide-spacing-{tests,ui,clippy,validator,keyboard}.log`，图片和发布元数据位于 `target/guide-spacing-preview/`。未验证真实 Bitwig，也未改动 DSP。
+0.13.2 验证记录：现有编辑器 8 项测试、单独 GPU 预览、Clippy、格式与空白检查通过；已目视检查默认布局、Routing 和最小窗口下分频两端的曲线、端点与小数位。最终制品 CLAP validator 为 36 passed / 0 failed / 0 warnings / 8 skipped，模拟宿主窗口生命周期、精确输入和空格消息检查通过。日志为 `target/guide-spacing-{tests,ui,clippy,validator,keyboard}.log`，图片和发布元数据位于 `target/guide-spacing-preview/`。未验证真实音频宿主，也未改动 DSP。
 
 0.13.2 制品为 `target/artifacts/0.13.2/my_spectral_resonator.clap`，稳定路径仍为 `target/bundled/my_spectral_resonator.clap`；哈希、大小和旧版备份见 `target/guide-spacing-preview/publication.json`。以下保留 0.13.1 的设计与验证记录。
 
@@ -42,7 +42,7 @@ Low / Mid 固定在频谱下方最左侧，Mid / High 固定在最右侧。Middl
 - 最终 CLAP 制品验证：36 passed、0 failed、0 warnings、8 skipped。日志 `target/crossover-guides-validator.log`。
 - 模拟宿主的真实 CLAP 编辑器创建、显示、隐藏及销毁通过；针对新数值行位置更新测试点击坐标，数值输入到 300 Hz 成功，9 条预期空格消息返回测试宿主，输入时正确捕获。日志 `target/crossover-guides-keyboard.log`。
 
-未操作真实 Bitwig。本次是 UI 调整，未重复 FFT/DSP 的离线 Bounce 矩阵；其证据见 [0.13.0 记录](FFT_SETTINGS_2026-09-28.md)，不将模拟宿主检查视为真实 Bitwig 验收。
+未操作真实音频宿主。本次是 UI 调整，未重复 FFT/DSP 的离线 Bounce 矩阵；其证据见 [0.13.0 记录](FFT_SETTINGS_2026-09-28.md)，不将模拟宿主检查视为真实音频宿主验收。
 
 ## 制品
 

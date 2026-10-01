@@ -1,14 +1,60 @@
-# Spectral Resonator
+# 猫振器 / Specatral Resonator
 
-面向 Bitwig Studio 的 Rust 频谱共鸣效果器，当前为 **0.14.0 开发版**。egui/wgpu 独立编辑器提供蓝色干声与白色 Unison 后湿声的频谱瀑布图、可拖动分频线、紧凑旋钮和精确数值输入、可拖动的衰减曲线。设置中可选 30/60/90/120 FPS 上限并显示实测帧率。拉大窗口时优先扩大频谱。支持可调的 1–16 声部 MIDI 复音、最多 512 泛音（默认 256）、Chorus / Wander / Granular、1–8 路 Unison。Unison 可在 Spectral 与 Post 两种算法间切换。默认双声道，左右独立处理，兼容单声道。
+> **内测 / 开发阶段：请先备份工程并在副本中试用。** 当前版本不保证稳定性、工程可恢复性或跨版本兼容性；具体风险与作品权属见下文。
 
-Windows x86-64 CLAP：`target/bundled/my_spectral_resonator.clap`，版本副本位于 `target/artifacts/0.14.0/`。低/高频静音见 [0.14.0 记录](docs/validation/BAND_MUTES_2026-09-29.md)。分频引导线与输出布局见 [0.13.1–0.13.3 记录](docs/validation/CROSSOVER_GUIDES_2026-09-28.md)。FFT 设置见 [0.13.0 记录](docs/validation/FFT_SETTINGS_2026-09-28.md)。湿声音头塑形见 [0.12.0 记录](docs/validation/TRANSIENT_RESHAPE_2026-09-28.md)。半窗及连续湿声对齐见 [0.11.2 记录](docs/validation/WET_ALIGNMENT_2026-09-28.md)。湿声音头对齐与空格键修复见 [0.11.1 记录](docs/validation/WET_TIMING_SPACE_2026-09-28.md)。独立 Attack 与短 Decay 见 [0.11.0 记录](docs/validation/ENVELOPE_2026-09-27.md)。底沿实时亮边见 [0.10.2 记录](docs/validation/UI_LIVE_EDGE_2026-09-27.md)，瀑布方向与固定布局见 [0.10.1 记录](docs/validation/UI_LAYOUT_2026-09-27.md)，新界面与性能测试见 [0.10.0 记录](docs/validation/UI_CONTROLS_2026-09-27.md)，低频分析见 [0.9.1 记录](docs/validation/UI_REFINEMENT_2026-09-27.md)，UI 与路由说明见 [0.9.0 记录](docs/validation/UI_2026-09-27.md)。保留 0.8.2 的有限尾音与 Bounce 修复；真实 Bitwig Bounce 是否恢复仍待用户确认，详见 [0.8.2 调查](docs/validation/BOUNCE_TAIL_2026-09-27.md)。
+[项目仓库](https://github.com/Aflocathought/NoisyCatAudio) · [问题反馈](https://github.com/Aflocathought/NoisyCatAudio/issues) · [文档索引](docs/README.md)
+
+**Noisy Cat Audio** 的 Rust 频谱共鸣效果器，使用 CLAP 插件接口，当前为 **0.15.0 开发版**。egui/wgpu 独立编辑器提供蓝色干声与白色 Unison 后湿声的频谱瀑布图、可拖动分频线、紧凑旋钮和精确数值输入、可拖动的衰减曲线。设置中可选 30/60/90/120 FPS 上限并显示实测帧率。拉大窗口时优先扩大频谱。支持可调的 1–16 声部 MIDI 复音、最多 512 泛音（默认 256）、Chorus / Wander / Granular、1–8 路 Unison。Unison 可在 Spectral 与 Post 两种算法间切换。默认双声道，左右独立处理，兼容单声道。
+
+Windows x86-64 CLAP：`target/bundled/my_spectral_resonator.clap`，版本副本位于 `target/artifacts/0.15.0/`。低/高频静音见 [0.14.0 记录](docs/validation/BAND_MUTES_2026-09-29.md)。分频引导线与输出布局见 [0.13.1–0.13.3 记录](docs/validation/CROSSOVER_GUIDES_2026-09-28.md)。FFT 设置见 [0.13.0 记录](docs/validation/FFT_SETTINGS_2026-09-28.md)。湿声音头塑形见 [0.12.0 记录](docs/validation/TRANSIENT_RESHAPE_2026-09-28.md)。半窗及连续湿声对齐见 [0.11.2 记录](docs/validation/WET_ALIGNMENT_2026-09-28.md)。湿声音头对齐与空格键修复见 [0.11.1 记录](docs/validation/WET_TIMING_SPACE_2026-09-28.md)。独立 Attack 与短 Decay 见 [0.11.0 记录](docs/validation/ENVELOPE_2026-09-27.md)。底沿实时亮边见 [0.10.2 记录](docs/validation/UI_LIVE_EDGE_2026-09-27.md)，瀑布方向与固定布局见 [0.10.1 记录](docs/validation/UI_LAYOUT_2026-09-27.md)，新界面与性能测试见 [0.10.0 记录](docs/validation/UI_CONTROLS_2026-09-27.md)，低频分析见 [0.9.1 记录](docs/validation/UI_REFINEMENT_2026-09-27.md)，UI 与路由说明见 [0.9.0 记录](docs/validation/UI_2026-09-27.md)。保留 0.8.2 的有限尾音与 Bounce 修复；真实音频宿主 Bounce 是否恢复仍待用户确认，详见 [0.8.2 调查](docs/validation/BOUNCE_TAIL_2026-09-27.md)。
+
+## 内测状态与使用风险
+
+本项目是个人维护的免费自由开源软件，由维护者按可用时间不定期更新。当前仍处于内测 / 开发阶段，不承诺持续维护、响应时限、修复期限或特定宿主与系统的兼容性，也不保证工程保存、重新打开、插件状态恢复和离线导出在所有环境中可靠。
+
+使用插件可能遇到宿主卡死或崩溃、异常电平、突发强声或噪声、未保存内容丢失、工程文件或插件状态损坏，以及工程无法重新打开或恢复等问题；异常输出还可能造成听力损伤，或扬声器、耳机、功放及其他音频设备损坏，并导致工作中断、恢复成本或其他损失。这里列出的是开发版的潜在风险，不表示这些问题均已发生，也不构成“不会炸工程”的保证。
+
+请保留独立、可恢复的工程备份，在工程副本中验证保存、重开和导出；重要轨道建议另外渲染为音频，并保留所用插件版本。升级前保留旧版本与工程副本，避免让唯一一份重要工程依赖未经验证的开发版。首次试听请降低监听音量并留出电平余量。当前主输出和独立湿声输出均无最终峰值限幅器或响度归一化，不能保证输出低于 0 dBFS；请在宿主末端使用适当的限幅和监听保护。数字限幅也不能保证实际声压安全，不能替代物理音量控制。详见 [输出保护检查](docs/validation/OUTPUT_SAFETY_2026-10-01.md)。
+
+项目自有代码的编写与修改使用了 AI 生成和辅助，可能存在未发现的逻辑、性能、兼容性或安全缺陷；AI 参与和已有测试都不构成质量保证，也不自动免除依法应承担的责任。第三方依赖的来源与许可单独保留。
+
+软件按“现状”提供，不作适销性、特定用途适用性或不侵权等担保。担保排除和责任限制以 [GPLv3 第 15–17 节](LICENSE) 为准，并受适用法律中不得排除或限制的义务约束；不能用本声明排除依法不得免责的人身损害、故意或重大过失等责任。本说明不向 GPLv3 额外添加用途限制。
+
+## 许可证与作品权属
+
+除另有标注及第三方内容外，本项目自有且有权授权的代码、文档和图标生成工具采用 **GPL-3.0-only**，即 GNU GPL 第 3 版，不自动包含后续版本。版权与适用范围见 [COPYRIGHT.md](COPYRIGHT.md)，完整条款见 [LICENSE](LICENSE)。分发受 GPL 覆盖的软件及其衍生版本时，须按条款提供相应源码并保留必要通知；GPL 允许收费销售。仅私下修改使用不要求公开源码，普通网络服务使用也不因 GPLv3 本身自动触发源码交付。
+
+自有标志图形另按 **CC0 1.0** 开放，具体文件范围、名称非独占共享与未来系列命名见 [名称与标志声明](docs/NAMING_AND_LICENSE.md)。第三方依赖、字体、素材及系统运行库继续适用原条款，不能因本项目选择 GPL 或 CC0 而被重新授权。此前若已有按 MIT 合法获得的版本，其已授予的权利不因本次改许可而追溯撤回。
+
+许可证选择不代替侵权、名称冲突或发布合规核查，也不保证第三方不会投诉。现有安装包尚未随本次修改重新构建；第三方声明、运行库条款及交付缺口见 [发布许可审计](docs/validation/RELEASE_LICENSE_AUDIT_2026-09-30.md)。
+
+**使用本插件本身不会改变你对输入素材及所创作输出享有的著作权或其他权利。** 本项目作者不因你使用插件处理、合成、录制或导出音频而主张你的音乐、录音或其他输出的所有权、共同著作权或收益份额。你可以在拥有相应权利的前提下，将输出用于商业或非商业项目，无须仅因使用本插件而公开工程、将作品按 GPL 授权、为插件作者署名或支付许可费。
+
+这项说明不替你取得输入采样、录音、作品或其他第三方素材的权利，也不保证任何输出都依法构成可受著作权保护的作品。作品与素材自身的权利仍依适用法律及原有授权确定；如果分发的是插件本身或其代码，仍需遵守相应软件许可。
+
+## 命名与兼容性
+
+当前项目名为 Noisy Cat Audio，插件中文名为猫振器，英文名为 Specatral Resonator；未来频谱延迟插件计划使用 Specatral Delay。`Specatral` 是有意使用的系列拼写，技术概念仍写作 `spectral`。此次仅更新显示名称，CLAP ID、参数 ID、状态格式、设置路径及安装器升级标识保持兼容；历史文件名和路径可能保留旧名称。文档中的“宿主”通常指原记录中的特定测试环境，不表示所有宿主均已验证。
+
+## Windows 安装
+
+已提供中英文安装向导，支持当前用户／所有用户、自选 CLAP 文件夹、沿用原目录更新、同版本修复与卸载。安装包输出到 `target/installers/0.15.0/SpectralResonator-0.15.0-Windows-x64-Setup.exe`。更新及卸载前请关闭音频宿主；文件占用时会停止并提示，不自动关闭宿主。卸载保留共享设置与其他插件。自选目录需加入音频宿主的插件扫描位置，其他目录中的旧手动副本需要自行移除。
+
+构建：`./scripts/setup-installer-tools.ps1` 准备便携 Inno Setup，随后运行 `./scripts/build-windows-installer.ps1 -Offline`；已有已验证的当前版本制品可用 `-SkipBuild` 仅打包。详细用法、升级规则和验证边界见 [Windows 安装器说明](installer/windows/README.md) 与 [安装生命周期验证](docs/validation/WINDOWS_INSTALLER_2026-09-29.md)。当前安装包尚未代码签名。
+
+## 全局偏好
+
+Settings 提供 Noisy Cat Audio 全局设置。最大 UI 帧率与语言偏好保存在 Windows 的 `%APPDATA%/com.aflocat.audio/settings.json`，同品牌插件共用；帧率不再随工程保存，旧工程的帧率字段不覆盖全局值。默认 60 FPS、跟随系统语言；本版只保存语言选择，界面仍为英文。FFT、图层开关和 FPS 调试显示仍是实例/工程设置。
+
+同库实例共享内存偏好，其它进程约 500 ms 同步。写入采用系统文件锁、按改动字段合并和同目录原子替换，保留其它插件及未来版本的未知字段。同一字段以最后一次成功保存为准。音频回调不访问配置文件。通用模块和未来插件接入规则见 [audio-plugin-settings](crates/audio-plugin-settings/README.md)。
+
+设置中的仓库入口指向 [NoisyCatAudio](https://github.com/Aflocathought/NoisyCatAudio)，用户确认目标网址后才会打开浏览器。插件元数据中的手册和支持入口分别指向仓库 README 与 Issues，不再使用占位网址或邮箱。共享偏好的原始验证见 [0.15.0 记录](docs/validation/GLOBAL_PREFERENCES_2026-09-29.md)。
 
 ## 界面与宿主效果链
 
-点击 Bitwig 设备的 **Plug-in Interface** 打开 GPU 编辑器。设备栏可使用 CLAP Remote Controls 的 Perform / Motion / Resonance 三页。公开接口没有提供 Bitwig 原生任意画布组件；CLAP 的迷你曲线草案也不足以实现交互瀑布图。
+在宿主中打开插件编辑器，使用 GPU 绘制的独立界面。支持 CLAP Remote Controls 的宿主可使用 Perform / Motion / Resonance / Envelope / Transient / Routing 六页控制；具体入口与路由能力取决于宿主。
 
-蓝色代表原始输入，补偿当前活动 FFT 的基础延迟（默认 4096 样本）；白色代表 Unison 后、包含 Wet Level / Mid Mix 和 Output Gain 的湿声。左右声道按功率合并显示，防止反相信号相消。频率轴为 20 Hz 至 min(20 kHz, Nyquist)，亮度范围约 -84 至 0 dBFS。历史约 4.3 秒，新信号从底部出现、向上滚动并从顶部消失，每秒一条时间刻度；相同图高下滚动速度为 0.9.0 的两倍。拖动分频线或旋钮可改频率，Shift 拖动细调，点击数值可键入，旋钮双击复位。Freeze view 只冻结显示。
+蓝色代表原始输入，补偿当前活动 FFT 的基础延迟（默认 4096 样本）；白色代表 Unison 后、包含 Wet Level / Mid Mix 和 Output Gain 的湿声。左右声道按功率合并显示，防止反相信号相消。频率轴为 20 Hz 至 min(20 kHz, Nyquist)，亮度范围约 -84 至 0 dBFS。历史约 4.3 秒，新信号从底部出现、向上滚动并从顶部消失，每秒一条时间刻度；相同图高下滚动速度为 0.9.0 的两倍。拖动分频线或旋钮可改频率，Shift 拖动细调，点击数值可键入，旋钮双击复位。Freeze view 只冻结显示。DRY / WET 左侧的蓝色 / 白色色块可分别切换对应频谱图层，隐藏时变为暗色空心框；整个历史和底部亮边立即更新，冻结时也可切换。显示状态随工程保存，两个图层均隐藏时仍保留网格与分频控件，不影响音频。
 
 低频显示使用 16384 点分析窗，400 Hz 以下完整应用，400–1000 Hz 平滑衔接至原来的 4096 点短窗。48 kHz 下低频频点间隔由 11.72 Hz 缩小至 2.93 Hz，但其时间窗口也由 85.3 ms 加长到 341.3 ms，所以低音的时间轮廓更宽；1 kHz 以上保留短窗响应。这里仅改变可视化，不增加声音延迟。拉高窗口时新增高度全部分配给频谱，控制区维持紧凑布局。
 
@@ -28,17 +74,17 @@ Windows x86-64 CLAP：`target/bundled/my_spectral_resonator.clap`，版本副本
 
 Settings 增加 **FFT size**，提供 1024、2048、3072、4096 点，默认 4096；48 kHz 下基础延迟分别为 21.33、42.67、64.00、85.33 ms。选择随工程/预设保存，旧工程缺失时恢复 4096。修改后请求宿主重新激活音频，当前共鸣尾音会重新开始；界面显示实际活动窗口与等待状态，宿主尚未重启时保持旧引擎及旧延迟。FFT 不支持时间线自动化。1024 使用 hop 256，其余使用 hop 512，因此低延迟不一定降低重负载 CPU。Wet alignment 仍按当前窗口的比例增加湿声延迟，Post Unison 也可能增加延迟；显示频谱的低频分辨率独立保留。
 
-Settings 中的帧率上限默认 60，调试开关在频谱右上角显示最近约一秒的实际 UI FPS；设置随工程/预设保存。显示分析仍每秒 30 行，滚动位置在行间插值，调高 UI 帧率不增加音频 DSP 或分析 FFT 的频率。实际帧率受宿主调度、显卡和显示环境限制，FPS 数值也不等同于屏幕实际扫描率。
+Settings 中的帧率上限默认 60，作为全局偏好保存；调试开关在频谱右上角显示最近约一秒的实际 UI FPS，该开关随工程/预设保存。显示分析仍每秒 30 行，滚动位置在行间插值，调高 UI 帧率不增加音频 DSP 或分析 FFT 的频率。实际帧率受宿主调度、显卡和显示环境限制，FPS 数值也不等同于屏幕实际扫描率。
 
-**Main Output** 默认为 Mixed；选择 Wet only 后，主输出只剩 Unison 后湿声，可直接接 Bitwig 效果器。若宿主选择可选的 **Stereo + Wet** 布局，则额外输出 **Wet / Post Unison** 可用于独立效果链。要分别处理后相加，将主输出设为 Dry contribution；Mixed 与额外湿声同时相加会重复湿声。默认 Stereo / Mono 布局保持不变，宿主若不提供布局选择，可使用 Wet only 加 FX Layer 的并行干声路径，但该路径保留的是完整干声，不等同于插件内部经过分频的干声贡献。
+**Main Output** 默认为 Mixed；选择 Wet only 后，主输出只剩 Unison 后湿声，可直接接音频宿主效果器。若宿主选择可选的 **Stereo + Wet** 布局，则额外输出 **Wet / Post Unison** 可用于独立效果链。要分别处理后相加，将主输出设为 Dry contribution；Mixed 与额外湿声同时相加会重复湿声。默认 Stereo / Mono 布局保持不变，宿主若不提供布局选择，可使用 Wet only 加宿主并行效果链中的干声路径，但该路径保留的是完整干声，不等同于插件内部经过分频的干声贡献。
 
-图中白色信号取自本插件内部，不能显示 Bitwig 后续效果器的输出。窗口关闭或隐藏时停止可视化采集；显示 FFT 和 GPU 上传均不在音频线程上运行。
+图中白色信号取自本插件内部，不能显示音频宿主后续效果器的输出。窗口关闭或隐藏时停止可视化采集；显示 FFT 和 GPU 上传均不在音频线程上运行。
 
-## 在 Bitwig 中使用
+## 在音频宿主中使用
 
-1. 重新加载插件，确认加载版本为 0.14.0。在立体声音频轨道上新建实例，确认双声道配置。避免同时扫描具有相同插件 ID 的历史副本。已加载的旧实例需要重新加载，单独扫描文件不保证替换内存中的旧版。
+1. 重新加载插件，确认加载版本为 0.15.0。在立体声音频轨道上新建实例，确认双声道配置。避免同时扫描具有相同插件 ID 的历史副本。已加载的旧实例需要重新加载，单独扫描文件不保证替换内存中的旧版。
 2. `Pitch Source = Internal` 时，`Root Note` 选择 MIDI 33–93，即 55–1760 Hz 的基音；音频输入持续激励共鸣。
-3. `Pitch Source = Midi` 时，在插件前用 Note Receiver 等宿主路由接收音符。界面隐藏 Root Note，显示 `Maximum polyphony`（1–16，默认 16）；切回 Internal 后 Root Note 原值保留。松键只停止该音符的新激励，已有尾音继续按 Decay 衰减；加入新音符不会清空旧共鸣。支持重复同音、踏板 CC64、All Notes Off、All Sound Off 和 CLAP Choke。
+3. `Pitch Source = Midi` 时，在插件前用宿主的 MIDI 路由接收音符。界面隐藏 Root Note，显示 `Maximum polyphony`（1–16，默认 16）；切回 Internal 后 Root Note 原值保留。松键只停止该音符的新激励，已有尾音继续按 Decay 衰减；加入新音符不会清空旧共鸣。支持重复同音、踏板 CC64、All Notes Off、All Sound Off 和 CLAP Choke。
 4. `Harmonics` 范围为 **1–512，新实例默认 256**；`Decay Mode = Damping` 沿用全局 `Decay T60` 和高低频阻尼。切换到 `Curve` 后，设置六组 `Decay Point n Frequency / T60`，直接指定各频率衰减到 −60 dB 的秒数，取代全局 Decay 和阻尼。`Excitation` 调整进入湿声的激励增益。
 5. `Low / Mid`、`Mid / High` 控制分频点。`Middle dry/wet`（宿主参数 `Mid Mix`）只混合中频：0% 为干声，100% 为共鸣湿声，默认 100%。`Wet level` 默认约 +12.041 dB、最大约 +24.082 dB，对应原线性增益 4 和 16。`Output gain` 默认 0 dB、最大约 +6.0206 dB。Mix=0% 时全频干声经原有延迟和 Output Gain 输出；Wet level=−∞ dB 仅静音湿声，在 Mix=100% 时中频仍被压低。Mute wet / panic 按钮开启时淡出并保持湿声静音，关闭后可重新演奏。
 6. `Modulation Mode` 可选 Off、Chorus、Wander、Granular。Chorus 为逐泛音周期调制；Wander 为逐泛音随机漂移；Granular 为逐泛音不规则触发的指数衰减包络。`Mod Rate` 控制速率或颗粒密度，`Mod Amount` 控制深度，`Pitch Mod` 控制音高调制范围，`Grain Decay` 控制颗粒包络的时间常数。
@@ -47,7 +93,7 @@ Settings 中的帧率上限默认 60，调试开关在频谱右上角显示最�
 
 Spread 只改变共鸣湿声的左右平衡，干声不受影响。它保留独立 L/R，不把两路折成单声道再声像定位：偏左时保持左路、衰减右路，偏右反之，所以纯左输入不会被搬到右路。100% 时外侧音符可完全偏向一侧，总电平可能下降；0% 不会把原立体声缩成单声道。单声道实例忽略 Spread。Internal 模式的音符也采用同一分配规则，单个持续音符不会自动来回移动。
 
-Resonance 页新增 `Attack response`：默认 `Natural` 保留共鸣器原有的渐进响应；选 `Independent` 可调 `Attack / 90%`（0–2000 ms，初始 10 ms）。它控制每个泛音在输入增强时建立到 90% 的速度，作用于音频中的重复瞬态，也适用于 Internal/MIDI。输入减弱或松键后仍使用 Decay / T60；0 ms 表示下一 hop 使用最快上升响应，不是零延迟。切回 Natural 隐藏旋钮但保留数值。Bitwig 远程控制新增 Envelope 页。
+Resonance 页新增 `Attack response`：默认 `Natural` 保留共鸣器原有的渐进响应；选 `Independent` 可调 `Attack / 90%`（0–2000 ms，初始 10 ms）。它控制每个泛音在输入增强时建立到 90% 的速度，作用于音频中的重复瞬态，也适用于 Internal/MIDI。输入减弱或松键后仍使用 Decay / T60；0 ms 表示下一 hop 使用最快上升响应，不是零延迟。切回 Natural 隐藏旋钮但保留数值。音频宿主远程控制新增 Envelope 页。
 
 0.11.2 将开关改为 `Wet alignment` 旋钮（Resonance 页及宿主 Envelope 页），范围 0–1 个窗口，新实例默认 0.5。0 为原始位置，0.5 为半窗，1 为整窗。半窗将 Unison 后湿声精确延后 2048 样本，48/44.1/96 kHz 下分别约 42.67/46.44/21.33 ms，界面同时显示当前毫秒数。中间值选择实际延迟位置，按最近整数采样读取；稳定后保持原湿声波形。调节时约 20 ms 淡变，不清空尾音；快速自动化等待当前淡变完成后再跟随最新值。主输出、额外 Wet 输出及白色频谱一致，干声与宿主报告的 4096 样本延迟不变。这是效果内湿声预延迟，半窗不保证所有声音的音头峰值相同，也可能仍有窗口前响。旧预设显式关闭/开启迁移为 0/1，缺失时补为 0.5，新版保存的小数值原样保留。因此已用过上一版开关的实例，请手动设为 **0.5 windows** 试听半窗。
 
@@ -75,20 +121,21 @@ Harmonics 是数量上限，实际数量还受基音和采样率限制，频率�
 
 Post 是小幅移调实验算法，带来约 0.33–40.33 ms 的可变湿声读头延迟（48 kHz），并可能产生轻微幅度起伏、旁带和高频变化；它不是 Spectral 的等音色替代。干声保持原来的 4096 samples 延迟，湿声延迟属于效果本身；算法切换和副本数量变化会短淡变，已有共鸣状态不清空。两种模式都使用每声道一次 FFT/IFFT；两路实信号打包在复数 IFFT 的实部/虚部输出，避免为分离干湿增加变换次数。
 
-0.8.0 的三轮离线 A/B 在 48 kHz / 256 samples、16 声部、Harmonics=256、Unison=8、Granular 下，55 Hz 起的持续和弦平均块耗时中位数由 Spectral 的 2.17 ms 降至 Post 的 0.63 ms；155.6 Hz 起则由 1.00 ms 降至 0.37 ms。全部 Post 配置的观测最大单块为 3.36 ms，低于本次 5.33 ms 预算。这是有音色差别的算法比较，不能作为 Bitwig 任意工程的实时保证；完整 p99、峰值及测试条件见 [0.8.0 记录](docs/validation/POST_UNISON_2026-09-27.md)。
+0.8.0 的三轮离线 A/B 在 48 kHz / 256 samples、16 声部、Harmonics=256、Unison=8、Granular 下，55 Hz 起的持续和弦平均块耗时中位数由 Spectral 的 2.17 ms 降至 Post 的 0.63 ms；155.6 Hz 起则由 1.00 ms 降至 0.37 ms。全部 Post 配置的观测最大单块为 3.36 ms，低于本次 5.33 ms 预算。这是有音色差别的算法比较，不能作为音频宿主任意工程的实时保证；完整 p99、峰值及测试条件见 [0.8.0 记录](docs/validation/POST_UNISON_2026-09-27.md)。
 
-0.7.3 在本机 48 kHz / 256 samples 的三轮离线测量中，16 声部 × 8 路 Unison × 64 泛音的最坏场景 p99 为 2.50 ms，全部测量最大单块为 3.65 ms。提高到 256 泛音后，持续和弦 p99 的三轮中位数约 5.16 ms，换和弦/抢占/曲线自动化也出现超过 5.33 ms 预算的处理块，不能保证该组合的实时余量。保持 16 × 8 × 256、改用 512 samples 后，最坏场景 p99 为 6.52 ms，最大 8.58 ms，低于当时的 10.67 ms 预算。这里的 p99 是约 99% 块耗时不超过的值，不是最大值；完整峰值、配置与边界见 0.7.3 验证记录。未自动减少用户选择的泛音或副本数，Bitwig 实际工程仍需试听。
+0.7.3 在本机 48 kHz / 256 samples 的三轮离线测量中，16 声部 × 8 路 Unison × 64 泛音的最坏场景 p99 为 2.50 ms，全部测量最大单块为 3.65 ms。提高到 256 泛音后，持续和弦 p99 的三轮中位数约 5.16 ms，换和弦/抢占/曲线自动化也出现超过 5.33 ms 预算的处理块，不能保证该组合的实时余量。保持 16 × 8 × 256、改用 512 samples 后，最坏场景 p99 为 6.52 ms，最大 8.58 ms，低于当时的 10.67 ms 预算。这里的 p99 是约 99% 块耗时不超过的值，不是最大值；完整峰值、配置与边界见 0.7.3 验证记录。未自动减少用户选择的泛音或副本数，音频宿主实际工程仍需试听。
 
 此前 0.7.1 将共轭频谱镜像从每个泛音的内循环合并为每声道一次，保留全部 65 点核、泛音数、Unison 数、精度与延迟。三轮交替 A/B 中，48 kHz/256 泛音/Granular×4 的平均处理耗时下降约 46%–50%，Off×1 下降约 14%–23%。当时按 256 样本块测量，四组压力场景最大单块约 2.32 ms，预算为 5.33 ms。这是旧版八声部池的离线结果，不代表新版十六声部满载；详见 0.7.1 性能记录。
 
-已提供自定义 GPU 编辑器及干声/湿声瀑布图，宿主参数面板仍可使用。MPE、Pitch Bend、连续滑音、VST3 和正式安装器尚未实现。平滑换音是尾音重叠与声部淡入淡出，不改变音符的固定音高。MIDI 模式需要音频作为激励。超出 MIDI 33–93 的音符直接忽略；接近 Nyquist 的泛音渐弱并排除。
+已提供自定义 GPU 编辑器及干声/湿声瀑布图，宿主参数面板仍可使用。MPE、Pitch Bend、连续滑音和 VST3 尚未实现。平滑换音是尾音重叠与声部淡入淡出，不改变音符的固定音高。MIDI 模式需要音频作为激励。超出 MIDI 33–93 的音符直接忽略；接近 Nyquist 的泛音渐弱并排除。
 
-新效果参考 [Live 官方手册](https://www.ableton.com/en/live-manual/12/live-audio-effect-reference/#spectral-resonator) 的功能语义，采用自己的实现，不保证相同音色。Spectral Unison 共用原始泛音的激励与衰减状态，再以不同频率、独立相位重建；Post 是独立的整体湿声移调方案，不能据此推断 Live 的内部算法。L/R 共用调制/读取轨迹，但音频状态独立、没有串音；Voice Spread 在声部输出处调节左右平衡。Granular 作用于频谱泛音，不是时域采样切片器。
+本项目采用自己的频谱共鸣实现。Spectral Unison 共用原始泛音的激励与衰减状态，再以不同频率、独立相位重建；Post 是整体湿声移调方案。L/R 共用调制/读取轨迹，但音频状态独立、没有串音；Voice Spread 在声部输出处调节左右平衡。Granular 作用于频谱泛音，不是时域采样切片器。
 
 `Grain Decay` 为指数包络的时间常数（一个时间常数后剩约 36.8%），不是 T60 或硬性颗粒长度；实际包络另受约 20 ms 平滑、hop 与分析窗限制。Chorus 的 Rate=0 时关闭音高摆动、固定各泛音的幅度分布；Granular 的 Rate=0 时停止产生新颗粒，已有颗粒继续衰减。高复音、高泛音和多路 Unison 会叠加 CPU 成本，详见本版负载记录。
 
 ## 文档与证据
 
+- [文档索引](docs/README.md)：功能、共享组件、构建、许可与验证记录的统一入口。
 - [项目大纲](docs/PROJECT_OUTLINE.md)：产品范围、里程碑与退出条件。
 - [实现设计](docs/IMPLEMENTATION.md)：算法、生命周期、实时约束与后续设计。
 - [0.5.0 验证记录](docs/validation/M3_2026-09-26.md)：数值结果、MIDI/内存检查、CPU 测量和宿主验收步骤。
@@ -119,13 +166,13 @@ cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 ./scripts/validate-clap.ps1
 ```
 
-Bitwig 占用稳定文件时，使用 `./scripts/bundle-clap.ps1 -ArtifactOnly -Offline` 生成版本副本，再执行 `./scripts/validate-clap.ps1 -PluginPath target/artifacts/0.14.0/my_spectral_resonator.clap`。打包脚本总是先保留版本副本。新机器首次下载依赖时去掉 `-Offline` / `--offline`。框架补丁记录于 [CLAP 补丁](vendor/nice-plug/PATCHES.md)、[编辑器补丁](vendor/nice-plug-egui/PATCHES.md)、[Windows 帧调度](vendor/baseview/PATCHES.md) 和 [GPU 渲染](vendor/egui-baseview/PATCHES.md)。
+音频宿主占用稳定文件时，使用 `./scripts/bundle-clap.ps1 -ArtifactOnly -Offline` 生成版本副本，再执行 `./scripts/validate-clap.ps1 -PluginPath target/artifacts/0.15.0/my_spectral_resonator.clap`。打包脚本总是先保留版本副本。新机器首次下载依赖时去掉 `-Offline` / `--offline`。框架补丁记录于 [CLAP 补丁](vendor/nice-plug/PATCHES.md)、[编辑器补丁](vendor/nice-plug-egui/PATCHES.md)、[Windows 帧调度](vendor/baseview/PATCHES.md) 和 [GPU 渲染](vendor/egui-baseview/PATCHES.md)。
 
-验证脚本优先使用 `target/tools/bin/clap-validator.exe`，否则从 PATH 查找。`scripts/probe-clap-editor.py PLUGIN` 在独立测试窗口中检查 GPU 编辑器的创建、缩放、显示和关闭重开，音频只写内存，不送扬声器。`cargo test -p spectral-resonator-plugin render_gpu_preview -- --ignored --nocapture` 使用同一 UI 和 GPU 渲染器生成 `target/ui-preview/*.ppm`，属于离屏渲染验证，不代表 Bitwig 宿主验收。
+验证脚本优先使用 `target/tools/bin/clap-validator.exe`，否则从 PATH 查找。`scripts/probe-clap-editor.py PLUGIN` 在独立测试窗口中检查 GPU 编辑器的创建、缩放、显示和关闭重开，音频只写内存，不送扬声器。`cargo test -p spectral-resonator-plugin render_gpu_preview -- --ignored --nocapture` 使用同一 UI 和 GPU 渲染器生成 `target/ui-preview/*.ppm`，属于离屏渲染验证，不代表真实音频宿主验收。
 
-帧率测试示例：`python scripts/probe-clap-editor.py target/artifacts/0.14.0/my_spectral_resonator.clap --fps 120 --seconds 8 --cycles 1 --profile target/ui-profile-120.jsonl`。帧间隔与 UI/分析耗时在编辑器关闭时写入该 JSONL；只在显式设置诊断路径时写入，音频线程不计时、不写文件。测试进程有超时保护，不能代替 Bitwig 的实际帧率与 Bounce 验收。
+帧率测试示例：`python scripts/probe-clap-editor.py target/artifacts/0.15.0/my_spectral_resonator.clap --fps 120 --seconds 8 --cycles 1 --profile target/ui-profile-120.jsonl`。帧间隔与 UI/分析耗时在编辑器关闭时写入该 JSONL；只在显式设置诊断路径时写入，音频线程不计时、不写文件。测试进程有超时保护，不能代替音频宿主的实际帧率与 Bounce 验收。
 
-运行 `cargo run -p spectral-dsp --example render_m4 --release --locked --offline` 可生成 `target/fixtures/m4/` 下的立体声输入、和弦共鸣输出 WAV，并打印 8 声部固定和弦、和弦更换与密集抢占时的离线块耗时。历史 `render_m3` 示例保留。这些是合成测试素材，不能替代 Bitwig 实际演奏。
+运行 `cargo run -p spectral-dsp --example render_m4 --release --locked --offline` 可生成 `target/fixtures/m4/` 下的立体声输入、和弦共鸣输出 WAV，并打印 8 声部固定和弦、和弦更换与密集抢占时的离线块耗时。历史 `render_m3` 示例保留。这些是合成测试素材，不能替代音频宿主实际演奏。
 
 `render_m4` 默认使用 64 泛音、48 kHz。位置参数依次为输出目录、泛音上限、采样率、模式（off/chorus/wander/granular）、Unison 数、衰减方式（damping/curve）、块长（默认 128）、每组音符数（1–16，默认 8）。例如 `cargo run -p spectral-dsp --example render_m4 --release --locked --offline -- target/fixtures/granular-256-48k 256 48000 granular 8 curve 256 16`。四组场景包括持续和弦、换和弦、密集抢占、持续和弦并自动化衰减曲线；输出实际峰值声部数。尾音也占槽，8 个新音符加旧尾音可能达到 16 声部，不能与旧版 8 槽池的换和弦负载直接比较。试听 WAV 仍保留两组四音和弦，便于复现历史音频。
 

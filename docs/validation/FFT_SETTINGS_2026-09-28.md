@@ -38,7 +38,7 @@ Settings 增加 `FFT size`，保存到工程/预设。用户可在低延迟与�
 - 四档 FFT 各测试 Internal/MIDI × Spectral/Post × 48/44.1/96 kHz，共 48 个离线渲染配置通过。模拟独立主线程/音频线程、播放到离线模式切换、状态快照、重激活、有限尾音排空及 WAV 输出。所有激活均报告对应 FFT 延迟且不额外重启。结果位于 `target/fft-settings-bounce-{1024,2048,3072,4096}/`。
 - 默认 4096 的音频兼容性另使用与 0.12.0 基线相同的参数：Independent、Attack 0 ms、Decay 5 ms、Wet alignment 0.5。12 组浮点音频 SHA256 和 PCM WAV SHA256 全部一致。结果 `target/fft-settings-probe/bounce-legacy/`，对比 `target/fft-settings-probe/legacy-comparison.json`。前述四档矩阵使用默认 Natural / Decay 50 ms，不能直接与这组旧基线比较。
 
-这些是源码、GPU 离屏和模拟宿主证据。本次未在真实 Bitwig 中验证菜单切换、实时负载或 Bounce，不据此宣称此前 Bitwig 挂起已解决。需要重新加载旧实例才能使用新制品。
+这些是源码、GPU 离屏和模拟宿主证据。本次未在真实音频宿主中验证菜单切换、实时负载或 Bounce，不据此宣称此前音频宿主挂起已解决。需要重新加载旧实例才能使用新制品。
 
 ## 制品与复现
 

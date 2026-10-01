@@ -15,7 +15,7 @@
 - 编辑器相关 8 项测试通过，其中 GPU 离屏测试使用真实生产绘制路径；`target/ui-0.10.2/ui-tests.log`。
 - 新增四种 GPU 像素回归场景：所有旧行暗色、仅最新行白色，覆盖游标起点、半行插值、环形跨界和中部位置。实际读取图顶前两行像素，确认最新白行不会出现在顶部；同时确认底沿仍显示白色亮边。诊断图 `target/ui-preview/edge-*.png` 为人工回归输入，不是实测声音。
 - 常规 `target/ui-preview/tab-0.png` 等预览仍使用 DSP 扫频/噪声，已检查底部亮边与频率对齐。GPU 为 NVIDIA GeForce RTX 4060 Laptop GPU / Vulkan / 595.97。
-- 本轮只改显示，没有重复全部 DSP/Bounce 测试或四档性能基准。实际 Bitwig 窗口需重新加载后确认。
+- 本轮只改显示，没有重复全部 DSP/Bounce 测试或四档性能基准。实际音频宿主窗口需重新加载后确认。
 
 - 格式化、全目标/全功能 Clippy `-D warnings` 通过；release 仍保留原 vendor/nice-plug 的两个 unused-variable 提示。
 - 最终 CLAP validator：36 passed、0 failed、0 warnings、8 skipped，日志 `target/ui-0.10.2/validator.log`。

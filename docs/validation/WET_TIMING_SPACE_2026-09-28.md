@@ -31,7 +31,7 @@
 
 根因在 vendored baseview 的 Windows 消息钩子：它预先调用插件窗口处理键盘消息，然后无条件把消息替换为空消息。即使 egui 返回 Ignored，宿主也拿不到原来的 Space KEYDOWN。
 
-现在先以无副作用的接口查询 Space 捕获策略，再决定是否解码。普通界面保留原 DOWN/CHAR/UP 和重复标志给宿主；即使宿主继续向子窗口分派该消息，也不会同时触发 egui 按钮。没有向 Bitwig 合成额外按键。只有数值编辑期间捕获 Space，输入提交/取消后恢复放行。其他原生按键路径保持原样。
+现在先以无副作用的接口查询 Space 捕获策略，再决定是否解码。普通界面保留原 DOWN/CHAR/UP 和重复标志给宿主；即使宿主继续向子窗口分派该消息，也不会同时触发 egui 按钮。没有向音频宿主合成额外按键。只有数值编辑期间捕获 Space，输入提交/取消后恢复放行。其他原生按键路径保持原样。
 
 `scripts/probe-clap-editor.py --keyboard` 在自己创建的宿主/子窗口测试真实 Windows 消息队列，不操作用户 DAW：
 
@@ -41,7 +41,7 @@
 - 测试宿主补齐了 CLAP 参数输出队列：nice-plug 只有在输出这些事件的音频边界才正式更新 GUI 提交值。该修改仅完善测试宿主。
 - 三次打开/缩放/关闭通过，尺寸 1120×780、1260×860、980×700；音频线程共 2186 块。日志 `target/timing-0.11.1/keyboard.log`。
 
-这证明测试宿主能收到原始快捷键消息，不等于已经在真实 Bitwig 中验证其快捷键设置及插件沙箱转发。
+这证明测试宿主能收到原始快捷键消息，不等于已经在真实音频宿主中验证其快捷键设置及插件沙箱转发。
 
 ## 其他验证与制品
 
@@ -50,7 +50,7 @@
 - GPU 实际绘制预览 `target/timing-0.11.1/resonance.png`，新开关和其他控件布局已检查。
 - 全目标/全功能 Clippy `-D warnings`、格式化与差异空白检查通过。release 编译保留 vendor/nice-plug 原有两个 unused-variable 提示。
 - 版本制品 CLAP validator：36 passed，0 failed，0 warnings，8 skipped；`target/timing-validator.log`。
-- 对齐开启、Attack 0、Decay 5 ms，Internal/MIDI × Spectral/Post × 48/44.1/96 kHz 共 12 个模拟离线配置通过，保存/恢复、尾音排空及停止/重启通过；`target/timing-0.11.1/bounce/`。真实 Bitwig Bounce 和主观听感仍待重载后确认。
+- 对齐开启、Attack 0、Decay 5 ms，Internal/MIDI × Spectral/Post × 48/44.1/96 kHz 共 12 个模拟离线配置通过，保存/恢复、尾音排空及停止/重启通过；`target/timing-0.11.1/bounce/`。真实音频宿主 Bounce 和主观听感仍待重载后确认。
 
 制品：`target/artifacts/0.11.1/my_spectral_resonator.clap`，13,749,760 字节，SHA256 `E42AE6E3A10A1E0B0EE796CD5C10F86CCC96B4B64721CBDB223932303A18CBB1`。稳定路径更新及 0.11.0 备份信息见 `target/timing-0.11.1/publication.json`。
 

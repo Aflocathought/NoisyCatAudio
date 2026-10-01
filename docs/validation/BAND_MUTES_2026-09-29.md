@@ -30,7 +30,7 @@ Low / Mid 与 Mid / High 控件下方各增加一个 Mute 按钮，选中时显�
 - 模拟宿主真实窗口显示/隐藏/销毁、数值输入到 300 Hz、9 条预期空格消息传回宿主通过，`target/band-mute-keyboard.log`。
 - 默认关闭 Mute 的 12 组模拟 Bounce 通过：Internal/MIDI × Spectral/Post × 48/44.1/96 kHz，包含尾音排空。浮点音频和 PCM WAV 的 SHA256 均与 0.13.0 的相同配置一致，结果 `target/band-mute-bounce/`，对比 `target/band-mute-preview/legacy-comparison.json`。
 
-本次未操作真实 Bitwig。源码、GPU 和模拟宿主证据不代替 Bitwig 的实际工程、听感或 Bounce 验收。
+本次未操作真实音频宿主。源码、GPU 和模拟宿主证据不代替音频宿主的实际工程、听感或 Bounce 验收。
 
 ## 制品
 

@@ -40,7 +40,7 @@
 - `target/alignment-0.11.2/impulse-short-response.png`、`.svg`、`.json`：5 ms Decay。
 - `target/alignment-0.11.2/impulse/` 与 `impulse-short/`：各 30 个 CSV，包含输入、实际干声及湿声。
 
-这些数据针对上述脉冲与设置，不是对所有音色、Post Unison 可变延迟或真实 Bitwig 听感的结论。
+这些数据针对上述脉冲与设置，不是对所有音色、Post Unison 可变延迟或真实音频宿主听感的结论。
 
 ## 验证与制品
 
@@ -53,7 +53,7 @@
 - 实际测试窗口三次打开/缩放/关闭通过，音频处理 2175 块。Space 普通/重复消息、文本捕获及编辑后返回宿主通过，宿主收到 9 条预期空格消息。见 `keyboard.log`。
 - GPU 预览 `resonance.png` 已目视检查，半窗与 42.67 ms 正常显示。
 
-以上未单独注明的日志均位于 `target/alignment-0.11.2/`。实际 Bitwig 加载、听感和 Bounce 仍需宿主内验收。
+以上未单独注明的日志均位于 `target/alignment-0.11.2/`。实际音频宿主加载、听感和 Bounce 仍需宿主内验收。
 
 版本副本：`target/artifacts/0.11.2/my_spectral_resonator.clap`，13,750,784 字节，SHA256 `6A3E02AE34D2FBC15F906BC95EFBBE2528CC535AD3E4FB92FC357CFCC2F39ED5`。稳定文件更新及旧版备份信息见 `target/alignment-0.11.2/publication.json`。
 

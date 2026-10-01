@@ -20,11 +20,11 @@
 - 四页布局与分频手势测试覆盖 980×700、1120×780、1120×1100；纵向增加 320 像素时，频谱实际增加 320 像素。
 
 - DSP 36 项源码测试通过，总计 65 项普通测试；`cargo fmt`、全目标 / 全功能 Clippy `-D warnings` 通过。Release 构建仍有原来 vendor/nice-plug 的两个 unused-variable 提示。
-- 同一生产 UI 的 GPU 离屏测试通过：NVIDIA GeForce RTX 4060 Laptop GPU / Vulkan / 595.97。真实 DSP 处理的扫频与噪声生成四页和加高窗口图片，位于 `target/ui-preview/`；已检查最小、默认和加高布局。这是离屏渲染，不是 Bitwig 截图。
+- 同一生产 UI 的 GPU 离屏测试通过：NVIDIA GeForce RTX 4060 Laptop GPU / Vulkan / 595.97。真实 DSP 处理的扫频与噪声生成四页和加高窗口图片，位于 `target/ui-preview/`；已检查最小、默认和加高布局。这是离屏渲染，不是音频宿主截图。
 - 新版制品 CLAP 验证：36 passed、0 failed、0 warnings、8 skipped，日志 `target/ui-0.9.1-validator.log`。
 - CLAP GUI 测试宿主通过三次打开、缩放、关闭重开，尺寸 1120×780 → 1260×860 → 980×700；音频线程处理 2579 块，报告延迟仍为 4096，缺少宿主 GUI 回调时正常拒绝创建。日志 `target/ui-0.9.1-editor.log`。测试不向扬声器输出。
 
-真实 Bitwig 显示流畅度与 Bounce 仍须宿主验收。本轮未重新进行离线 Bounce 对比；音频 DSP 与框架均未改动，音频源码回归已通过。
+真实音频宿主显示流畅度与 Bounce 仍须宿主验收。本轮未重新进行离线 Bounce 对比；音频 DSP 与框架均未改动，音频源码回归已通过。
 
 ## 制品
 
@@ -32,4 +32,4 @@
 
 替换前核对稳定文件仍为 0.9.0 的 `94A1919313F8CDE144DB3C0EC853534ECB640636091BDD9498E67FF948F0EA29`，备份为 `target/bundled/0.9.0-before-ui-refinement-dd61d6c965c247d79deaa9e25c485aec.previous`。替换后再次核对新文件与备份哈希，记录位于 `target/ui-refinement-publication.json`。
 
-Bitwig 中重新加载实例后，标题栏应显示 0.9.1；现有窗口中的旧 DLL 不会因为磁盘替换而自动更新。
+音频宿主中重新加载实例后，标题栏应显示 0.9.1；现有窗口中的旧 DLL 不会因为磁盘替换而自动更新。

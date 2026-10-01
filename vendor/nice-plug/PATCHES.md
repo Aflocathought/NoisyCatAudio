@@ -21,11 +21,11 @@ Only two source files differ from the published crate:
   path. `scripts/probe-clap-fft.py` exercises actual parameter flushes and confirms
   exactly one restart per requested size, with none added by reactivation.
 
-Spectral Resonator opts out because its activation/DSP never varies by process
+Specatral Resonator opts out because its activation/DSP never varies by process
 mode. Sample-rate, buffer-size and channel-layout reactivation is unaffected.
 Do not opt out for a plugin that needs reconfiguration when render mode changes.
 
-The 0.8.1 mode-change opt-out alone did not resolve the reported Bitwig Bounce
+The 0.8.1 mode-change opt-out alone did not resolve the reported host Bounce
 hang. A two-thread fake host then reproduced indefinite CONTINUE responses even
 after output was exactly zero, plus absent tail-change notifications. 0.8.2 fixes
 those CLAP tail semantics without changing DSP or the tail-length calculation.
@@ -35,8 +35,8 @@ the plugin lock; they may synchronously query the newly published tail value.
 
 Specification: <https://github.com/free-audio/clap/blob/main/include/clap/process.h>
 and <https://github.com/free-audio/clap/blob/main/include/clap/ext/tail.h>.
-Actual Bitwig Bounce confirmation remains necessary; the fake host does not
-prove Bitwig's internal scheduling or wait chain.
+Actual host Bounce confirmation remains necessary; the fake host does not
+prove the host's internal scheduling or wait chain.
 
 Regression: `scripts/check-clap-render.py PLUGIN --require-no-restart` exercises
 the exported CLAP ABI, detects old restart requests, and compares audio across

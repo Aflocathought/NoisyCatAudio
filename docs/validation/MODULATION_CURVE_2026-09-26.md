@@ -27,9 +27,9 @@ Chorus 使用逐泛音三角波。Wander 在独立的随机目标间连续漂移
 
 ## 参考与实现边界
 
-本次核对 [Ableton Live 12 官方手册](https://www.ableton.com/en/live-manual/12/live-audio-effect-reference/#spectral-resonator)：模式为 None、Chorus、Wander、Granular；Partial 指单个泛音。手册描述 Chorus 的三角波、Wander 的随机锯齿源、Granular 的随机指数包络和 Unison 的失谐副本，但不公开完整内部 DSP。
+当前实现提供 Off、Chorus、Wander、Granular 和 Unison。Partial 指单个泛音；以下仅说明本项目实现，不作为其他产品内部 DSP 的说明。
 
-本实现采用自己的频谱重合成模型。Wander 使用随机目标间线性插值，Unison 共用原始激励后分别失谐合成，不等价于多个独立失谐输入滤波器。没有进行 Live 音频 A/B，不承诺逐样本或听感一致。Harmonics 仍是每 MIDI 声部的上限，没有引入 Live 在复音间分摊总泛音数的规则。
+本实现采用自己的频谱重合成模型。Wander 使用随机目标间线性插值，Unison 共用原始激励后分别失谐合成，不等价于多个独立失谐输入滤波器。没有进行 其他产品 音频 A/B，不承诺逐样本或听感一致。Harmonics 仍是每 MIDI 声部的上限，没有引入 其他产品 在复音间分摊总泛音数的规则。
 
 ## 源码与 CLAP 验证
 
@@ -65,7 +65,7 @@ Rust/Cargo 1.92.0、nice-plug 0.4.2、RustFFT 6.4.1、clap-validator 0.4.1；未
 
 **48 kHz、64 泛音、2 路 Unison 是本次较轻的实测起点**。256 泛音/2 路已有部分峰值超时；8 个低音配 256 泛音/4 路在 48 kHz 也超过预算，192 kHz/1024/4 更不能称为稳定实时配置。没有自动缩小用户参数或丢音来掩盖成本。增加宿主缓冲、降低泛音或 Unison、减少同时发声数可减轻压力，具体仍需宿主验证。
 
-各组 p50 约 1.6–3.7 µs，但 FFT 和重建集中在每四个块中的一个，不能据此判断实时余量。初始化约 27–30 ms（48 kHz）与 102 ms（192 kHz）。所有输出有限；没有进行 Bitwig 10 分钟运行、多实例或音频 underrun 验收。
+各组 p50 约 1.6–3.7 µs，但 FFT 和重建集中在每四个块中的一个，不能据此判断实时余量。初始化约 27–30 ms（48 kHz）与 102 ms（192 kHz）。所有输出有限；没有进行音频宿主 10 分钟运行、多实例或音频 underrun 验收。
 
 完整原始耗时保存在 `target/modulation-{light,off,chorus,wander,granular,stress}-benchmark.txt`。重现：
 
@@ -93,6 +93,6 @@ target/artifacts/0.7.0/my_spectral_resonator.clap
 SHA-256: 6AF8A49F8A0CAACA2005DFA281C1AEF8C1EBD866003CFE724890317FA0DBDDC7
 ```
 
-以原子替换更新稳定路径，没有关闭 Bitwig。原 0.6.1 文件保留为 `target/bundled/8bb4b437f287474aac933c06a760e1a6.previous`，SHA-256 为 `C920ED4A9DB1ECA32329EF827878593343629DE1E195D5C3BF2D35ECB4A5F05E`。运行中的实例仍需重新加载才能使用新版。
+以原子替换更新稳定路径，没有关闭音频宿主。原 0.6.1 文件保留为 `target/bundled/8bb4b437f287474aac933c06a760e1a6.previous`，SHA-256 为 `C920ED4A9DB1ECA32329EF827878593343629DE1E195D5C3BF2D35ECB4A5F05E`。运行中的实例仍需重新加载才能使用新版。
 
-宿主待验收：确认扫描版本 0.7.0 与双声道；从 48 kHz/64 泛音/Unison=2 开始听三种模式；在长尾音中切换模式并调曲线节点；保存、重开工程确认所有节点及模式恢复；观察自动化、窗口/轨道切换、多实例和持续播放的峰值负载。源码与 CLAP 通过不代表这些宿主行为或与 Live 的听感已验收。
+宿主待验收：确认扫描版本 0.7.0 与双声道；从 48 kHz/64 泛音/Unison=2 开始听三种模式；在长尾音中切换模式并调曲线节点；保存、重开工程确认所有节点及模式恢复；观察自动化、窗口/轨道切换、多实例和持续播放的峰值负载。源码与 CLAP 通过不代表这些宿主行为或与 其他产品 的听感已验收。

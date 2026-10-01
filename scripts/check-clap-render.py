@@ -1,7 +1,7 @@
 """Exercise the built CLAP's render transition, lifecycle and audio ABI.
 
 This bounded fake host checks the exported library rather than calling Rust DSP
-directly. It is a regression check, not a substitute for Bitwig Bounce testing.
+directly. It is a regression check, not a substitute for host Bounce testing.
 Run in a subprocess so the calling shell can enforce a timeout.
 """
 
