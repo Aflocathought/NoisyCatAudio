@@ -2,6 +2,8 @@
 
 没有 Mac 时，可通过本仓库的 GitHub Actions **macOS build and test** 使用 GitHub 托管的 Mac。工作流分别在 `macos-15`（Apple Silicon / arm64）和 `macos-15-intel`（x86_64）上原生编译并运行测试，不使用 Rosetta 来代替另一种架构的执行。
 
+2026-10-02 已完成两个架构的实际云端编译和自动测试，结果、测试包及 Intel 非正规数性能警告见 [验证记录](validation/MACOS_CI_2026-10-02.md)。
+
 ## 范围
 
 - 使用 `rust-toolchain.toml` 固定的 Rust 和 `Cargo.lock` 构建当前 CLAP 插件。

@@ -32,6 +32,7 @@
 | [输出保护检查](validation/OUTPUT_SAFETY_2026-10-01.md) | 当前没有最终峰值限幅；离线峰值及检查边界 |
 | [发布许可审计](validation/RELEASE_LICENSE_AUDIT_2026-09-30.md) | 依赖、字体、运行库及发布包声明的未完成项 |
 | [本轮源码整理与验证](validation/REPOSITORY_REVIEW_2026-10-02.md) | 命名、仓库链接、分批提交及本轮检查结果 |
+| [macOS 云端编译与测试](validation/MACOS_CI_2026-10-02.md) | ARM / Intel 原生构建、单元测试、CLAP 校验及实验包 |
 
 更早的算法、性能和界面记录位于 [validation](validation/)，按文件名中的日期及文内版本阅读。历史记录中的测试数、制品哈希和性能数据只对应当时版本；中性的“宿主”表述不表示所有音频宿主均已验证。
 
