@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 Noisy Cat Audio contributors
+// Distributed without warranty; see the root LICENSE and COPYRIGHT.md.
+
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -57,13 +61,14 @@ impl Default for SpectralResonator {
 }
 
 impl Plugin for SpectralResonator {
-    const NAME: &'static str = "Spectral Resonator";
-    const VENDOR: &'static str = "Spectral Resonator Project";
-    const URL: &'static str = "https://example.invalid/spectral-resonator";
-    const EMAIL: &'static str = "audio@example.invalid";
+    const NAME: &'static str = "Specatral Resonator";
+    const VENDOR: &'static str = "Noisy Cat Audio";
+    const URL: &'static str = env!("CARGO_PKG_REPOSITORY");
+    // Support uses the repository; do not advertise a placeholder mailbox.
+    const EMAIL: &'static str = "";
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-    // nice-plug exposes the first layout as CLAP's default. Bitwig should
+    // nice-plug exposes the first layout as CLAP's default. The host should
     // therefore receive stereo by default while mono remains available.
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
         AudioIOLayout {
@@ -363,7 +368,7 @@ impl ClapPlugin for SpectralResonator {
     ) {
         use nice_plug::context::remote_controls::{RemoteControlsPage, RemoteControlsSection};
         let p = &self.params;
-        context.add_section("Spectral Resonator", |section| {
+        context.add_section("Specatral Resonator", |section| {
             section.add_page("Perform", |page| {
                 page.add_param(&p.low_mid_hz);
                 page.add_param(&p.mid_high_hz);
@@ -420,7 +425,7 @@ impl ClapPlugin for SpectralResonator {
     }
     // This engine deliberately uses identical DSP in realtime and offline mode.
     // Requesting a restart inside render.set() adds an unnecessary handshake
-    // while Bitwig is already transitioning to Bounce. Keep mode changes local;
+    // while the host is already transitioning to Bounce. Keep mode changes local;
     // sample-rate/layout changes still use the regular activate/reset lifecycle.
     const CLAP_REACTIVATE_ON_RENDER_MODE_CHANGE: bool = false;
 
@@ -429,9 +434,9 @@ impl ClapPlugin for SpectralResonator {
         "Polyphonic spectral resonator with chorus, wander, granular, unison and frequency decay curve.",
     );
     const CLAP_MANUAL_URL: Option<&'static str> =
-        Some("https://example.invalid/spectral-resonator/manual");
+        Some(concat!(env!("CARGO_PKG_REPOSITORY"), "#readme"));
     const CLAP_SUPPORT_URL: Option<&'static str> =
-        Some("https://example.invalid/spectral-resonator/support");
+        Some(concat!(env!("CARGO_PKG_REPOSITORY"), "/issues"));
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Utility];
 }
 

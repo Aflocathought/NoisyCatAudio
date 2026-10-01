@@ -45,7 +45,7 @@ pub fn create(
         state,
         RepaintNotifier::default(),
         EguiNiceSettings::new()
-            .with_tile("Spectral Resonator")
+            .with_tile("Specatral Resonator")
             .with_graphics_config(
                 nice_plug_egui::GraphicsConfig::default().with_unthrottled_presentation(),
             )
@@ -148,7 +148,7 @@ impl ResonatorEditor {
         ui.spacing_mut().item_spacing = Vec2::new(12.0, 8.0);
         ui.horizontal(|ui| {
             ui.label(
-                egui::RichText::new("SPECTRAL / RESONATOR")
+                egui::RichText::new("SPECATRAL / RESONATOR")
                     .size(23.0)
                     .strong()
                     .color(WHITE),

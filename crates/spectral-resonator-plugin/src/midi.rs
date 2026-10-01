@@ -233,7 +233,7 @@ impl MidiNotes {
         emit: &mut impl FnMut(NoteAction),
     ) {
         // CLAP wildcards match all applicable notes; do not invent a note ID
-        // from channel/key, since Bitwig may omit IDs on note-off.
+        // from channel/key, since a host may omit IDs on note-off.
         for note in self.notes.iter_mut().flatten() {
             if note.down && note.matches(id, channel, key) {
                 note.down = false;

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Specatral Resonator · Icon Studio</title>
+  <link rel="icon" type="image/svg+xml" href="spectral-resonator.svg">
+  <style>
+    :root { color-scheme: dark; --blue:#3593ff; --white:#e8f2ff; --ink:#080f1a; --muted:#92a4bc; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#0c1420; color:var(--white); font-family:Inter,"Segoe UI","Microsoft YaHei",sans-serif; }
+    main { max-width:1260px; margin:auto; padding:48px 48px 32px; }
+    header { display:flex; justify-content:space-between; align-items:start; border-bottom:1px solid #233044; padding-bottom:26px; gap:24px; }
+    .eyebrow { font-size:11px; letter-spacing:3px; color:var(--blue); margin:0 0 10px; }
+    h1 { margin:0; font-size:28px; font-weight:500; letter-spacing:-.7px; }
+    header p { color:var(--muted); font-size:13px; line-height:1.8; margin:8px 0 0; }
+    .badge { padding:7px 11px; border:1px solid #2e3e54; border-radius:5px; font:11px monospace; color:var(--muted); white-space:nowrap; }
+    .workspace { display:grid; grid-template-columns:minmax(0,1fr) 292px; gap:48px; padding-top:34px; }
+    .stage { min-height:470px; display:grid; place-items:center; border:1px solid #203048; border-radius:16px; background:radial-gradient(ellipse at 50% 55%,#182b42 0%,#0e1929 65%); }
+    #hero { width:min(100%,420px); padding:24px; line-height:0; }
+    #hero svg { width:100%; height:auto; filter:drop-shadow(0 22px 36px #0005); }
+    .checker { background-color:#152233!important; background-image:linear-gradient(45deg,#ffffff05 25%,transparent 25%),linear-gradient(-45deg,#ffffff05 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#ffffff05 75%),linear-gradient(-45deg,transparent 75%,#ffffff05 75%)!important; background-size:24px 24px!important; background-position:0 0,0 12px,12px -12px,-12px 0!important; }
+    .sizes { display:flex; align-items:end; justify-content:center; min-height:138px; gap:32px; margin-top:18px; }
+    figure { margin:0; text-align:center; }
+    figure svg { display:block; }
+    figcaption { margin-top:12px; color:var(--muted); font:11px monospace; }
+    h2 { font-size:11px; color:var(--muted); letter-spacing:2px; font-weight:500; margin:2px 0 24px; }
+    .swatches { display:flex; justify-content:space-between; gap:12px; margin-bottom:28px; }
+    .swatch { font:10px monospace; color:var(--muted); }
+    .swatch i { width:65px; height:24px; border:1px solid #ffffff18; border-radius:4px; display:block; margin-bottom:8px; }
+    .control { margin:24px 0; }
+    label { display:flex; justify-content:space-between; font-size:12px; color:#c5d3e4; margin-bottom:12px; }
+    output { font:12px monospace; color:var(--blue); }
+    input[type=range] { width:100%; accent-color:var(--blue); cursor:pointer; }
+    select,button { font:inherit; border:1px solid #2e425d; border-radius:6px; background:#122034; color:var(--white); }
+    select { width:100%; padding:10px; font-size:12px; }
+    button { padding:11px 15px; cursor:pointer; font-size:12px; }
+    button:hover { border-color:var(--blue); background:#1a304b; }
+    button:focus-visible,select:focus-visible,input:focus-visible { outline:2px solid var(--blue); outline-offset:3px; }
+    .downloads { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:12px; }
+    .primary { background:var(--blue); color:#080f1a; border-color:var(--blue); font-weight:600; }
+    .primary:hover { background:#74b5ff; }
+    .reset { display:block; margin:14px auto 0; padding:6px; border:0; color:var(--muted); background:transparent; }
+    .note { font-size:11px; color:var(--muted); line-height:1.8; margin:18px 0 0; }
+    #status { min-height:20px; color:#a9cfff; font-size:11px; }
+    footer { margin-top:30px; padding-top:20px; border-top:1px solid #233044; color:var(--muted); font-size:11px; letter-spacing:.2px; display:flex; gap:16px; justify-content:space-between; }
+    footer a { color:var(--muted); text-underline-offset:3px; }
+    @media(max-width:800px) { main{padding:28px 20px} .workspace{grid-template-columns:1fr;gap:30px} .stage{min-height:350px} aside{max-width:480px;width:100%;margin:auto} .badge{display:none} .sizes{gap:18px} footer{flex-direction:column} }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div><p class="eyebrow">SPECATRAL RESONATOR / VISUAL IDENTITY</p><h1>让共振，层层浮现。</h1><p>蓝色频谱托起共振，逐层靠近冷白。</p></div>
+    <span class="badge">ICON STUDIO · 01</span>
+  </header>
+  <div class="workspace">
+    <section aria-label="图标预览">
+      <div class="stage" id="stage"><div id="hero"></div></div>
+      <div class="sizes" id="sizes" aria-label="实际尺寸预览"></div>
+    </section>
+    <aside>
+      <h2>主题配色 / PALETTE</h2>
+      <div class="swatches">
+        <div class="swatch"><i style="background:#3593ff"></i>#3593FF</div>
+        <div class="swatch"><i style="background:#e8f2ff"></i>#E8F2FF</div>
+        <div class="swatch"><i style="background:#080f1a"></i>#080F1A</div>
+      </div>
+      <div class="control"><label for="layers">共振层数 <output id="layers-value">4</output></label><input id="layers" type="range" min="2" max="5" value="4"></div>
+      <div class="control"><label for="spacing">层间距 <output id="spacing-value">34</output></label><input id="spacing" type="range" min="20" max="40" value="34"></div>
+      <div class="control"><label for="weight">线条粗细 <output id="weight-value">8</output></label><input id="weight" type="range" min="5" max="12" step="0.5" value="8"></div>
+      <div class="control"><label for="background">图标背景</label><select id="background"><option value="dark">深色圆角底</option><option value="transparent">透明背景</option></select></div>
+      <div class="control"><label for="export-size">导出尺寸</label><select id="export-size"><option>32</option><option>64</option><option>128</option><option>256</option><option selected>512</option><option>1024</option><option>2048</option></select></div>
+      <div class="downloads"><button class="primary" id="download-svg">下载 SVG</button><button id="download-png">下载 PNG</button></div>
+      <button class="reset" id="reset">恢复默认</button>
+      <p class="note">SVG 可无损缩放。透明版适合深色界面；浅色界面建议使用带底色版本。32 px 以下可减少至 2–3 层。</p>
+      <p id="status" role="status" aria-live="polite"></p>
+    </aside>
+  </div>
+  <footer><span>宽频激励 → 多层共振 → 冷白峰线</span><span>纯矢量 · 离线可用 · <a href="README.md">复用说明</a></span></footer>
+</main>
+<script src="spectral-icon.js"></script>
+<script>
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const names = ['layers','spacing','weight','background'];
+  const options = () => Object.fromEntries(names.map(name => [name, $(name).value]));
+  function render() {
+    for (const name of names.slice(0,3)) $(name+'-value').value = $(name).value;
+    $('hero').innerHTML = SpectralIcon.svg({ ...options(), id:'hero' });
+    $('stage').classList.toggle('checker', $('background').value === 'transparent');
+    $('sizes').innerHTML = [96,64,32,24].map(size => '<figure>' + SpectralIcon.svg({ ...options(), size, id:'size'+size }) + '<figcaption>' + size + ' px</figcaption></figure>').join('');
+  }
+  function download(blob, extension) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'spectral-resonator-' + $('background').value + '-' + $('export-size').value + '.' + extension;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $('status').textContent = extension.toUpperCase() + ' 已生成。';
+  }
+  for (const name of names) $(name).addEventListener('input', render);
+  $('reset').addEventListener('click', () => {
+    for (const name of names) $(name).value = SpectralIcon.defaults[name];
+    $('export-size').value = '512';
+    $('status').textContent = '';
+    render();
+  });
+  $('download-svg').addEventListener('click', () => download(new Blob([SpectralIcon.svg({ ...options(), size:$('export-size').value })], {type:'image/svg+xml'}), 'svg'));
+  $('download-png').addEventListener('click', async () => {
+    const button = $('download-png');
+    button.disabled = true;
+    const size = Number($('export-size').value);
+    const source = new Blob([SpectralIcon.svg({ ...options(), size })], {type:'image/svg+xml'});
+    const url = URL.createObjectURL(source);
+    try {
+      // Render the exact same SVG on a transparent canvas; no screenshot crop or server.
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      canvas.getContext('2d').drawImage(image, 0, 0, size, size);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) throw new Error('PNG 导出失败');
+      download(blob, 'png');
+    } catch (error) {
+      $('status').textContent = '导出失败：' + error.message;
+    } finally {
+      URL.revokeObjectURL(url);
+      button.disabled = false;
+    }
+  });
+  render();
+</script>
+</body>
+</html>

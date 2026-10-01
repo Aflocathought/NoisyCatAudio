@@ -1,3 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 Noisy Cat Audio contributors
+// Distributed without warranty; see the root LICENSE and COPYRIGHT.md.
+
 #![forbid(unsafe_code)]
 
 mod bin_resonator;
