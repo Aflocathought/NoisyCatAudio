@@ -1,0 +1,124 @@
+name: macOS build and test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'codex/macos-*']
+    paths:
+      - 'crates/**'
+      - 'vendor/**'
+      - 'Cargo.*'
+      - 'rust-toolchain.toml'
+      - 'scripts/**'
+      - '.github/workflows/macos.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'vendor/**'
+      - 'Cargo.*'
+      - 'rust-toolchain.toml'
+      - 'scripts/**'
+      - '.github/workflows/macos.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: macOS 15 / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TERM_COLOR: never
+      MACOSX_DEPLOYMENT_TARGET: '15.0'
+      AUDIO_PLUGIN_SETTINGS_ROOT: ${{ runner.temp }}/spectral-settings
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust and record environment
+        run: |
+          mkdir -p target/macos-validation
+          toolchain="$(python3 -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("rust-toolchain.toml").read_text())["toolchain"]["channel"])')"
+          rustup toolchain install "$toolchain" --profile minimal
+          [[ "$(uname -m)" == '${{ matrix.arch }}' ]]
+          {
+            sw_vers
+            uname -m
+            xcodebuild -version
+            rustc -Vv
+            cargo -V
+            git rev-parse HEAD
+          } | tee target/macos-validation/environment.txt
+      - name: Build and package native CLAP
+        id: bundle
+        run: bash scripts/bundle-clap-macos.sh 2>&1 | tee target/macos-validation/build.log
+      - name: Run workspace unit tests
+        run: |
+          target="$(rustc -vV | sed -n 's/^host: //p')"
+          cargo test --workspace --lib --release --locked --target "$target" 2>&1 | tee target/macos-validation/tests.log
+      - name: Verify packaged plugin and CLAP contract
+        env:
+          ARCHIVE: ${{ steps.bundle.outputs.archive }}
+        run: |
+          ditto -x -k "$ARCHIVE" target/macos-validation/unpacked
+          bundle="$PWD/target/macos-validation/unpacked/my_spectral_resonator.clap"
+          codesign --verify --strict --verbose=2 "$bundle"
+          plutil -lint "$bundle/Contents/Info.plist"
+          file "$bundle/Contents/MacOS/my_spectral_resonator" | tee target/macos-validation/binary.txt
+          otool -L "$bundle/Contents/MacOS/my_spectral_resonator" | tee target/macos-validation/libraries.txt
+          # Reuse the upstream universal validator and verify its release digest.
+          curl --fail --location --retry 3 --output target/macos-validation/validator.zip \
+            https://github.com/free-audio/clap-validator/releases/download/0.4.1/clap-validator-0.4.1-127-g152b982-macos-universal.zip
+          echo 'bbec8cd7d18274e549d5d8c12ece3cec54be966129388dd2e742b9957f2ba9f1  target/macos-validation/validator.zip' | shasum -a 256 --check
+          ditto -x -k target/macos-validation/validator.zip target/macos-validation/validator
+          validator="$(find target/macos-validation/validator -type f -name clap-validator -print -quit)"
+          test -n "$validator"
+          chmod +x "$validator"
+          "$validator" validate "$bundle" 2>&1 | tee target/macos-validation/clap-validator.log
+      - name: Probe packaged audio lifecycle and offline rendering
+        timeout-minutes: 6
+        run: |
+          binary="$PWD/target/macos-validation/unpacked/my_spectral_resonator.clap/Contents/MacOS/my_spectral_resonator"
+          python3 scripts/check-clap-render.py "$binary" --require-no-restart | tee target/macos-validation/render.json
+          python3 scripts/probe-clap-bounce.py "$binary" --require-tail-drain --output target/macos-validation/bounce
+      - name: Archive corresponding source
+        run: git archive --format=tar.gz --output=target/macos-validation/source.tar.gz HEAD
+      - name: Upload passing test packages
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macOS-${{ matrix.arch }}-test-package
+          path: |
+            target/artifacts/*/macOS-*/*.zip
+            target/artifacts/*/macOS-*/*.sha256
+            target/macos-validation/source.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: macOS-${{ matrix.arch }}-validation
+          path: |
+            target/macos-validation/*.txt
+            target/macos-validation/*.log
+            target/macos-validation/*.json
+            target/macos-validation/bounce/*.json*
+          if-no-files-found: warn
+          retention-days: 14

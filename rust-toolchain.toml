@@ -1,4 +1,4 @@
 [toolchain]
 channel = "1.95.0"
 profile = "minimal"
-targets = ["x86_64-pc-windows-msvc"]
+# rustup installs the native host target on Windows and macOS automatically.

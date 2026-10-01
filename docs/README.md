@@ -13,6 +13,7 @@
 | 跨插件共享偏好及接入协议 | [audio-plugin-settings](../crates/audio-plugin-settings/README.md) |
 | 图标源码、预览与导出 | [图标说明](../assets/icon/README.md) |
 | Windows 安装、更新、卸载与构建 | [安装器说明](../installer/windows/README.md) |
+| macOS 云端编译、测试与实验包 | [Mac 构建说明](MACOS_BUILD.md) |
 
 ## 授权、名称与贡献
 
